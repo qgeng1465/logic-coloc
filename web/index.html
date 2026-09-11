@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Logic-Coloc - 把专业知识翻译成你能理解的语言">
+  <title>Logic-Coloc</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Logic-Coloc 首页">Logic-Coloc</a>
+    <span class="status" id="sessionStatus">尚未创建会话</span>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="pageTitle">
+      <p class="eyebrow">跨学科知识理解工具</p>
+      <h1 id="pageTitle">把专业知识翻译成你能理解的语言</h1>
+      <p class="lead">粘贴一段专业内容，先理解它，再寻找其他领域中结构相似的概念。</p>
+    </section>
+
+    <nav class="mode-tabs" aria-label="功能切换">
+      <button class="tab active" type="button" data-panel="explainPanel" aria-selected="true">读懂它</button>
+      <button class="tab" type="button" data-panel="discoverPanel" aria-selected="false">发现同源</button>
+    </nav>
+
+    <section class="workspace" id="explainPanel">
+      <div class="input-area">
+        <label for="explainText">专业文本</label>
+        <textarea id="explainText" rows="9" placeholder="粘贴你想读懂的概念、文章段落或专业描述……"></textarea>
+        <div class="actions">
+          <span class="input-hint">支持中文专业文本</span>
+          <button class="primary" id="explainButton" type="button">读懂它</button>
+        </div>
+        <p class="error" id="explainError" role="alert" hidden></p>
+      </div>
+
+      <div class="result-area" id="explainResult" hidden aria-live="polite">
+        <div class="result-heading">
+          <div><p class="eyebrow">知识解释</p><h2 id="conceptName">分析结果</h2></div>
+          <span class="intent-tag">解释</span>
+        </div>
+        <p class="answer" id="explanation"></p>
+        <div class="profile" id="logicProfile" hidden>
+          <h3>逻辑画像</h3>
+          <div id="profileRows"></div>
+        </div>
+
+        <div class="follow-up" id="followUp" hidden>
+          <label for="chatText">继续追问</label>
+          <div class="chat-row">
+            <input id="chatText" type="text" placeholder="例如：还是不懂，能再简单一点吗？">
+            <button class="secondary" id="chatButton" type="button">发送</button>
+          </div>
+          <p class="error" id="chatError" role="alert" hidden></p>
+          <div class="conversation" id="conversation" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace discover-workspace" id="discoverPanel" hidden>
+      <div class="input-area">
+        <label for="discoverText">要寻找同源结构的概念或文本</label>
+        <textarea id="discoverText" rows="7" placeholder="输入一个概念，或粘贴一段需要跨学科联想的内容……"></textarea>
+        <div class="actions">
+          <span class="input-hint">当前知识库：11 个策展概念，最多返回 5 个可展开模块</span>
+          <button class="primary discover" id="discoverButton" type="button">发现同源</button>
+        </div>
+        <p class="error" id="discoverError" role="alert" hidden></p>
+      </div>
+
+      <div class="result-area" id="discoverResult" hidden aria-live="polite">
+        <div class="principle"><strong>底层逻辑相似 ≠ 科学等价</strong><span>类比用于辅助理解，不替代各学科中的严格定义。</span></div>
+        <p class="answer" id="discoverReport"></p>
+        <div class="candidate-list" id="candidateList"></div>
+        <p class="empty-state" id="discoverEmpty" hidden>当前证据不足，不强行建立类比。</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="loading-overlay" id="loading" hidden aria-live="assertive" aria-label="正在处理">
+    <div class="spinner"></div><span id="loadingText">正在分析…</span>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
