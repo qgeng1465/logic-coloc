@@ -81,7 +81,11 @@ def score_and_map(state: AgentState) -> dict[str, Any]:
             result = tools.calculate_homonomy(state.logic_profile, candidate.logic_profile); score = float(result["score"])
             homology_result = HomologyResult(candidate_id=candidate.id, score=score, method=result.get("method", config.METHOD))
             homology.append(homology_result)
-            if score < config.THRESHOLD: continue
+            # Keep every retrieved candidate visible, including low-similarity
+            # results. Entity mapping/report generation remains gated by the
+            # deterministic threshold, but the score and rationale are public.
+            if score < config.THRESHOLD:
+                continue
             candidate_text = "\n".join(filter(None, [candidate.concept, candidate.description, candidate.mechanism]))
             mapped = tools.map_entities(state.user_input or "", candidate_text, score)
             if not isinstance(mapped, MappingResult): continue

@@ -139,6 +139,21 @@ class HomologyResult(BaseModel):
     method: Literal["cosine", "wasserstein"] = "cosine"
     threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     passed: bool | None = None
+    # Public discovery-card fields.  They are optional so the deterministic
+    # homology engine and its existing callers remain unchanged.
+    concept: str | None = None
+    domain: str | None = None
+    retrieval_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    reliability: str | None = None
+    summary: str | None = None
+    mechanism: str | None = None
+    critique: str | None = None
+    metrics: dict[str, float] = Field(default_factory=dict)
+    references: list[str] = Field(default_factory=list)
+    retrieval_score_reason: str | None = None
+    homonomy_score_reason: str | None = None
+    retrieval_source: str = "vector_db"
+    homonomy_source: str = "llm_rubric"
 
     @field_validator("passed", mode="before")
     @classmethod

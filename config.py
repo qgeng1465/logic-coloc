@@ -1,11 +1,39 @@
 # -*- coding: utf-8 -*-
 """全局配置：LLM 端点、模型、演示默认参数（均可用环境变量覆盖）。"""
 import os
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Load simple KEY=VALUE settings before reading runtime configuration.
+
+    The project intentionally avoids a dotenv dependency; this keeps local
+    `.env` settings available to uvicorn processes started from any directory.
+    Existing environment variables always take precedence.
+    """
+    for candidate in (Path(__file__).resolve().parent / ".env", Path(__file__).resolve().parents[1] / ".env"):
+        if not candidate.is_file():
+            continue
+        try:
+            for raw in candidate.read_text(encoding="utf-8-sig").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key, value = key.strip(), value.strip().strip("\"'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            pass
+        break
+
+
+_load_dotenv()
 
 # LLM 端点：本机 claude-openai-bridge（Anthropic 兼容 /v1/messages）
 # 也可改为 https://api.deepseek.com/anthropic 直连
-BRIDGE   = os.environ.get("LC_BRIDGE", "http://127.0.0.1:8388")
-MODEL    = os.environ.get("LC_MODEL", "deepseek-v4-flash")   # kimi-k3 / glm-4.6 / deepseek-v4-pro
+BRIDGE   = os.environ.get("LC_BRIDGE", "https://api.deepseek.com/anthropic")
+MODEL    = os.environ.get("LC_MODEL", "deepseek-chat")   # kimi-k3 / glm-4.6 / deepseek-chat
 API_KEY  = os.environ.get("LC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 TIMEOUT  = int(os.environ.get("LC_TIMEOUT", "180"))
 # thinking 参数：实测 DeepSeek 兼容端点上「disabled」+ 低 max_tokens 会偶发空响应，

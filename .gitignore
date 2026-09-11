@@ -10,3 +10,8 @@ venv/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local H5 note data and user uploads
+data/notes.json
+data/cards.json
+uploads/

@@ -5,82 +5,289 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Logic-Coloc - 把专业知识翻译成你能理解的语言">
   <title>Logic-Coloc</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <div class="app-shell">
   <header class="topbar">
     <a class="brand" href="/" aria-label="Logic-Coloc 首页">Logic-Coloc</a>
-    <span class="status" id="sessionStatus">尚未创建会话</span>
+    <span class="topbar-actions"><button class="history-button" id="historyButton" type="button" aria-label="历史记录">◷</button><span class="status" id="sessionStatus">尚未创建会话</span></span>
   </header>
 
   <main>
-    <section class="intro" aria-labelledby="pageTitle">
+    <section class="intro knowledge-shell" aria-labelledby="pageTitle">
       <p class="eyebrow">跨学科知识理解工具</p>
-      <h1 id="pageTitle">把专业知识翻译成你能理解的语言</h1>
-      <p class="lead">粘贴一段专业内容，先理解它，再寻找其他领域中结构相似的概念。</p>
+      <h1 id="pageTitle">探索它在跨学科领域的逻辑同源</h1>
+      <p class="lead" id="pageSubtitle">输入一个概念，看看其他学科里有没有相似的运行机制。</p>
     </section>
 
-    <nav class="mode-tabs" aria-label="功能切换">
-      <button class="tab active" type="button" data-panel="explainPanel" aria-selected="true">读懂它</button>
-      <button class="tab" type="button" data-panel="discoverPanel" aria-selected="false">发现同源</button>
+    <nav class="mode-tabs knowledge-shell" aria-label="求知功能切换">
+      <button class="tab active" type="button" data-panel="discoverPanel" aria-selected="true">跨学科理解</button>
+      <button class="tab" type="button" data-panel="explainPanel" aria-selected="false">读懂它</button>
     </nav>
 
-    <section class="workspace" id="explainPanel">
+    <section class="knowledge-launcher knowledge-shell" id="knowledgeLauncher">
+      <div class="launcher-heading"><p class="eyebrow" id="launcherEyebrow">导入文本寻找跨学科同源</p><h2 id="launcherTitle">导入内容或概念，寻找跨学科同源</h2></div>
+      <div class="import-options launcher-options">
+        <button class="import-option launcher-option" type="button" data-launch-import="link"><span>01</span><strong>从链接导入</strong><small>支持知乎、小红书、抖音等链接</small><b>↗</b></button>
+        <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+        <button class="import-option launcher-option" type="button" data-launch-import="image"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+      </div>
+    </section>
+    <section class="history-memory knowledge-shell" id="historyMemory"><button class="history-back-button" id="historyBackButton" type="button" aria-label="返回导入方式">‹</button><div class="history-memory-head"><h2>历史记忆</h2><button id="historyMemoryMore" type="button">查看更多 →</button></div><div id="historyMemoryList"></div><button class="secondary history-clear-current" id="clearCurrentHistory" type="button">清空当前模式的历史</button></section>
+
+    <section class="workspace knowledge-shell" id="explainPanel" hidden>
       <div class="input-area">
+        <button class="back-button back-to-launcher" type="button">← 返回导入方式</button>
         <label for="explainText">专业文本</label>
-        <textarea id="explainText" rows="9" placeholder="粘贴你想读懂的概念、文章段落或专业描述……"></textarea>
+        <textarea id="explainText" rows="4" placeholder="粘贴概念、专业段落，或直接提问……"></textarea>
+        <button class="import-trigger" id="importContentButton" type="button">＋ 导入内容</button>
         <div class="actions">
-          <span class="input-hint">支持中文专业文本</span>
+          <div class="example-prompts" aria-label="示例">
+            <span class="input-hint">试试示例：</span>
+            <button class="example-prompt" type="button" data-target="explainText">为什么负反馈可以让系统稳定？</button>
+          </div>
           <button class="primary" id="explainButton" type="button">读懂它</button>
         </div>
         <p class="error" id="explainError" role="alert" hidden></p>
       </div>
 
       <div class="result-area" id="explainResult" hidden aria-live="polite">
-        <div class="result-heading">
-          <div><p class="eyebrow">知识解释</p><h2 id="conceptName">分析结果</h2></div>
-          <span class="intent-tag">解释</span>
-        </div>
-        <p class="answer" id="explanation"></p>
-        <div class="profile" id="logicProfile" hidden>
-          <h3>逻辑画像</h3>
-          <div id="profileRows"></div>
+        <button class="back-button result-back" id="backToHome" type="button" aria-label="返回导入方式">‹</button>
+        <div class="knowledge-flow">
+          <div class="message user knowledge-user" id="explainUserMessage"></div>
+          <article class="knowledge-answer">
+            <div class="result-heading">
+              <div><p class="eyebrow">Logic-Coloc</p><h2 id="conceptName">分析结果</h2></div>
+              <span class="intent-tag">解释</span>
+            </div>
+            <div class="answer" id="explanationCore"></div>
+            <details class="answer-disclosure" id="answerDisclosure">
+              <summary>展开详细回答 ↓</summary>
+              <div class="answer" id="explanation"></div>
+            </details>
+            <div class="answer-actions">
+              <button class="secondary compact" id="saveCardButton" type="button">存为卡片</button>
+              <button class="secondary compact" id="profileToggle" type="button" aria-expanded="false">查看逻辑画像 ›</button>
+            </div>
+            <div class="profile" id="logicProfile" hidden>
+              <h3>逻辑画像</h3>
+              <div id="profileRows"></div>
+            </div>
+          </article>
         </div>
 
         <div class="follow-up" id="followUp" hidden>
+          <div class="conversation" id="conversation" aria-live="polite"></div>
+          <button class="secondary discover-shortcut" id="explainToDiscover" type="button">发现这个概念的跨学科同源 →</button>
           <label for="chatText">继续追问</label>
           <div class="chat-row">
-            <input id="chatText" type="text" placeholder="例如：还是不懂，能再简单一点吗？">
+            <textarea id="chatText" rows="2" placeholder="输入问题…"></textarea>
             <button class="secondary" id="chatButton" type="button">发送</button>
           </div>
           <p class="error" id="chatError" role="alert" hidden></p>
-          <div class="conversation" id="conversation" aria-live="polite"></div>
         </div>
       </div>
     </section>
 
-    <section class="workspace discover-workspace" id="discoverPanel" hidden>
+    <section class="workspace discover-workspace knowledge-shell" id="discoverPanel" hidden>
       <div class="input-area">
+        <button class="back-button back-to-launcher" type="button">← 返回导入方式</button>
         <label for="discoverText">要寻找同源结构的概念或文本</label>
-        <textarea id="discoverText" rows="7" placeholder="输入一个概念，或粘贴一段需要跨学科联想的内容……"></textarea>
+        <textarea id="discoverText" rows="4" placeholder="输入一个概念，或粘贴一段需要跨学科联想的内容……"></textarea>
+        <button class="import-trigger" id="discoverImportContentButton" type="button">＋ 导入内容</button>
         <div class="actions">
-          <span class="input-hint">当前知识库：11 个策展概念，最多返回 5 个可展开模块</span>
+          <div>
+            <span class="input-hint">当前知识库：11 个策展概念，最多返回 3 个可展开模块</span>
+            <div class="example-prompts"><button class="example-prompt" type="button" data-target="discoverText">人工神经网络如何从数据中学习？</button></div>
+          </div>
           <button class="primary discover" id="discoverButton" type="button">发现同源</button>
         </div>
         <p class="error" id="discoverError" role="alert" hidden></p>
       </div>
 
       <div class="result-area" id="discoverResult" hidden aria-live="polite">
+        <button class="back-button result-back" id="discoverBackToLauncher" type="button" aria-label="返回导入方式">‹</button>
+        <p class="eyebrow" id="discoverTitle">发现同源</p>
         <div class="principle"><strong>底层逻辑相似 ≠ 科学等价</strong><span>类比用于辅助理解，不替代各学科中的严格定义。</span></div>
         <p class="answer" id="discoverReport"></p>
         <div class="candidate-list" id="candidateList"></div>
         <p class="empty-state" id="discoverEmpty" hidden>当前证据不足，不强行建立类比。</p>
       </div>
     </section>
+
+    <section class="app-page library-page" id="cardsPage" hidden>
+      <div class="app-page-head"><div><p class="eyebrow">知识仓库</p><h2>我的书架</h2></div><button class="secondary compact" id="newBookButton" type="button">＋ 新建书本</button></div>
+      <div class="book-list" id="bookList"></div>
+      <div class="book-detail" id="bookDetail" hidden>
+        <button class="back-button" id="backToShelf" type="button">← 返回书架</button>
+        <div class="app-page-head"><div><p class="eyebrow">书内卡片</p><h2 id="bookDetailTitle">知识卡片</h2></div></div>
+        <div class="mini-card-list" id="miniCardList"></div>
+        <button class="note-fab" id="newCardButton" type="button" aria-label="新建知识卡片">＋</button>
+      </div>
+    </section>
+    <section class="app-page review-page" id="reviewPage" hidden>
+      <button class="return-profile" id="returnToProfile" type="button">← 返回看山</button>
+      <div class="app-page-head"><div><p class="eyebrow">沉浸式复习</p><h2>今日复习</h2></div><span class="points-chip" id="reviewPoints">能量 0</span></div>
+      <div class="review-filter-row"><nav class="review-filters" aria-label="复习卡片筛选">
+        <button class="review-filter active" type="button" data-review-filter="unmastered">未掌握 <span id="unmasteredCount">0</span></button>
+        <button class="review-filter" type="button" data-review-filter="mastered">已掌握 <span id="masteredCount">0</span></button>
+        <button class="review-filter" type="button" data-review-filter="all">全部 <span id="allCount">0</span></button>
+      </nav><button class="review-edit" id="reviewEdit" type="button">编辑</button></div>
+      <div class="review-test" id="reviewTest">
+        <div class="review-progress" id="reviewProgress">1 / 4</div>
+        <div class="flash-stage">
+          <button class="flashcard" id="flashcard" type="button" aria-label="复习卡片">
+            <span class="flashcard-inner">
+              <span class="flash-face flash-front"><strong id="flashFront">MCP</strong><img class="flash-image" id="flashFrontImage" alt="卡片正面图片" hidden><span class="definition-skeleton" aria-label="释义已遮挡"><i></i><i></i><i></i></span></span>
+              <span class="flash-face flash-back"><small>核心定义</small><strong id="flashBack">Model Context Protocol：让模型以统一方式连接工具与上下文的协议。</strong><img class="flash-image" id="flashBackImage" alt="卡片背面图片" hidden><span class="answer-guide"><b>机制拆解</b><span>连接能力、工具与上下文</span><b>关联扩展</b><span>可继续学习 Client、Server 与 Resource</span></span></span>
+            </span>
+          </button>
+          <div class="review-complete" id="reviewComplete" hidden><div class="review-mascot"><img id="reviewCompleteAvatar" alt="当前用户头像"></div><strong>🎉 今日复习任务完成！真棒！</strong><p id="reviewCompleteText"></p><span class="points-chip" id="pointsChip">能量 0</span><button class="primary" id="viewMasteredAfterReview" type="button">查看已掌握卡片 →</button><button class="secondary" id="returnProfileAfterReview" type="button">返回看山</button></div>
+        </div>
+        <p class="review-hint" id="reviewHint">瞬间想起含义，选「认识」；思考后想起含义，选「模糊」</p>
+        <div class="review-actions memory-actions" id="memoryActions" aria-label="记忆判断"><button class="review-grade know" type="button" data-memory-action="know">认识</button><button class="review-grade vague" type="button" data-memory-action="vague">模糊</button><button class="review-grade forgot" type="button" data-memory-action="forgot">忘记了</button></div>
+        <div class="review-actions answer-actions-row" id="answerActions" aria-label="答案判断" hidden><button class="review-grade know" type="button" data-answer-action="next">下一词</button><button class="review-grade forgot" type="button" data-answer-action="wrong">记错了</button></div>
+      </div>
+      <div class="review-library" id="reviewLibrary" hidden><div class="review-card-list" id="reviewCardList"></div></div>
+    </section>
+    <section class="app-page notes-page" id="notesPage" hidden>
+      <div class="app-page-head notes-head"><div><p class="eyebrow">个人知识流</p><h2 id="notesPageTitle">全部笔记</h2><small class="note-count" id="notesPageCount"></small></div><div class="note-head-actions"><button id="toggleNoteLayout" type="button" aria-label="切换列表或网格">▦</button><button id="focusNoteSearch" type="button" aria-label="搜索">⌕</button><button id="toggleBatchMode" type="button" aria-label="批量管理">⠿</button></div></div>
+      <div class="category-scroll-row"><button class="category-arrow" id="categoriesLeft" type="button" aria-label="向左浏览分类">‹</button><div class="note-categories" id="noteCategories"></div><button class="category-arrow" id="categoriesRight" type="button" aria-label="向右浏览分类">›</button><button class="category-add" id="addNoteCategory" type="button" aria-label="新建分类">＋</button></div>
+      <button class="folder-breadcrumb" id="folderBreadcrumb" type="button" hidden>← 返回　<span id="folderBreadcrumbName"></span></button>
+      <label class="note-search"><span aria-hidden="true">⌕</span><input id="noteSearch" type="search" placeholder="搜索笔记"><button id="clearNoteSearch" type="button" aria-label="清除搜索" hidden>×</button></label>
+      <div class="note-list" id="noteList"></div>
+    </section>
+    <section class="app-page profile-page" id="petPage" hidden>
+      <button class="profile-identity" id="editProfileButton" type="button"><span class="avatar-wrap"><img id="profileAvatar" alt="用户头像"><span class="avatar-fallback" id="avatarFallback">山</span></span><span><strong id="profileNickname">学术萌新</strong><small id="profileSignature">记录每一次深度思考，留给未来的自己。</small></span><b>›</b></button>
+      <article class="level-card"><div><small id="levelLabel">LV.1 · 学术萌新</small><strong><span id="profilePoints">0</span> 能量</strong></div><button id="openRulesButton" type="button">规则与明细 →</button><div class="level-track"><i id="levelProgress"></i></div><p id="levelRemaining">距离下一级还差 100 能量</p><div class="kanshan-static" aria-label="刘看山静态形象">◉</div></article>
+      <div class="record-heading"><h3>我的记录</h3></div>
+      <div class="record-grid"><button type="button" data-record-filter="mastered"><strong id="recordMastered">0</strong><span>已掌握卡片</span></button><button type="button" data-record-filter="unmastered"><strong id="recordUnmastered">0</strong><span>未掌握卡片</span></button><article><strong id="recordNotes">0</strong><span>笔记数量</span></article><article><strong id="recordDays">1</strong><span>学习天数</span></article></div>
+    </section>
   </main>
 
-  <div class="loading-overlay" id="loading" hidden aria-live="assertive" aria-label="正在处理">
+  <div class="local-loading" id="loading" hidden aria-live="polite" aria-label="正在处理">
     <div class="spinner"></div><span id="loadingText">正在分析…</span>
+  </div>
+  <button class="back-to-top" id="backToTop" type="button" aria-label="回到顶部">↑</button>
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="bottom-sheet" id="mappingSheet" hidden role="dialog" aria-modal="true" aria-labelledby="mappingSheetTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-heading"><h2 id="mappingSheetTitle">术语与机制角色对照</h2><button id="mappingSheetClose" type="button" aria-label="关闭术语对照">×</button></div>
+    <div class="sheet-content" id="mappingSheetContent"></div>
+  </section>
+  <section class="bottom-sheet" id="saveCardSheet" hidden role="dialog" aria-modal="true" aria-labelledby="saveCardTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-heading"><h2 id="saveCardTitle">存为知识卡片</h2><button id="saveCardSheetClose" type="button" aria-label="关闭存卡面板">×</button></div>
+    <div class="save-preview"><span class="input-hint">当前知识</span><strong id="saveCardConcept">尚未生成解释</strong></div>
+    <label for="shelfSelect">选择书架</label>
+    <select id="shelfSelect"><option>默认书架</option><option disabled>更多书架将在后续开放</option></select>
+    <p class="input-hint">当前阶段尚未接入卡片存储，确认后不会产生虚假保存记录。</p>
+    <p class="save-card-status" id="saveCardStatus" role="status"></p><div class="sheet-actions"><button class="primary" id="confirmSaveCard" type="button">确认存入卡片</button><button class="secondary" id="cancelSaveCard" type="button">取消</button></div>
+  </section>
+  <section class="bottom-sheet history-sheet" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="historyTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyTitle">历史记录</h2><button id="historyClose" type="button">×</button></div><div class="history-filter-tabs" role="tablist" aria-label="历史记录类型"><button class="history-filter active" type="button" data-history-type="读懂它" role="tab">读懂它</button><button class="history-filter" type="button" data-history-type="跨学科理解" role="tab">跨学科理解</button></div><div id="historyList"></div><button class="secondary" id="clearHistory" type="button">清空当前模式历史</button></section>
+  <section class="bottom-sheet delete-confirm global-confirm" id="historyDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="historyDeleteTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyDeleteTitle">删除历史记录</h2><button id="closeHistoryDelete" type="button">×</button></div><p>删除后无法恢复，确定要删除这条历史记录吗？</p><div class="sheet-actions"><button class="secondary" id="cancelHistoryDelete" type="button">取消</button><button class="danger-button" id="confirmHistoryDelete" type="button">确认删除</button></div></section>
+  <section class="bottom-sheet" id="noteSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteSheetTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-heading"><h2 id="noteSheetTitle">新建笔记</h2><button id="noteSheetClose" type="button" aria-label="关闭笔记编辑器">×</button></div>
+    <label for="noteTitle">标题</label><input id="noteTitle" type="text" placeholder="给笔记起个名字">
+    <label for="noteCategorySelect">分类</label><select id="noteCategorySelect"></select>
+    <label for="noteBody">正文</label><div class="rich-toolbar" id="richToolbar" aria-label="排版工具栏"><select id="fontName" aria-label="字体"><option value="system-ui">系统默认</option><option value="Source Han Sans SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif">思源黑体</option><option value="Source Han Serif SC, Noto Serif CJK SC, SimSun, serif">思源宋体</option><option value="KaiTi, STKaiti, serif">楷体</option><option value="FangSong, STFangsong, serif">仿宋</option><option value="Microsoft YaHei, sans-serif">微软雅黑</option><option value="PingFang SC, sans-serif">苹方</option><option value="SimHei, sans-serif">黑体</option><option value="SimSun, serif">宋体</option><option value="Helvetica, sans-serif">Helvetica</option><option value="Arial, sans-serif">Arial</option></select><select id="fontSize" aria-label="字号"><option value="3">标准</option><option value="2">小</option><option value="4">大</option><option value="5">标题</option></select><button type="button" data-rich-command="bold"><b>B</b></button><button type="button" data-rich-command="italic"><i>I</i></button><button type="button" data-rich-command="underline"><u>U</u></button><label class="toolbar-color" title="文字颜色">A<input id="foreColor" type="color" value="#18201d"></label><label class="toolbar-color highlight" title="背景高亮">▰<input id="hiliteColor" type="color" value="#fff0a8"></label><button type="button" data-rich-command="insertUnorderedList">•≡</button><button type="button" data-rich-command="insertOrderedList">1≡</button><button id="insertEditorImage" type="button" aria-label="插入图片" title="插入图片">🖼️</button><input id="editorImageFile" type="file" accept="image/*" hidden></div><div id="noteBody" class="rich-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="写下你的理解……"></div>
+    <label class="attachment-picker" for="noteAttachmentFile">＋ 添加附件</label><input id="noteAttachmentFile" type="file" accept="application/pdf,image/*" hidden>
+    <div class="attachment-list" id="noteAttachments"></div>
+    <div class="sheet-actions"><button class="danger-button" id="deleteNote" type="button" hidden>删除</button><button class="secondary" id="cancelNote" type="button">取消</button><button class="primary" id="saveNote" type="button">保存</button></div>
+  </section>
+  <section class="bottom-sheet note-create-sheet" id="noteCreateSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteCreateTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="noteCreateTitle">新建与导入</h2><button id="closeNoteCreate" type="button">×</button></div><div class="create-menu"><button id="createNoteMenu" type="button"><span>✎</span><strong>新建笔记</strong><small>选择模板后开始记录</small></button><button id="createFolderMenu" type="button"><span>▱</span><strong>新建文件夹</strong><small>整理你的笔记分类</small></button><button id="importImageMenu" type="button"><span>▧</span><strong>导入图片</strong><small>作为新笔记附件导入</small></button><button id="importPdfMenu" type="button"><span>PDF</span><strong>导入 PDF</strong><small>创建可预览的文件笔记</small></button></div><input id="quickNoteImport" type="file" hidden></section>
+  <section class="bottom-sheet folder-sheet" id="folderSheet" hidden role="dialog" aria-modal="true" aria-labelledby="folderTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="folderTitle">新建文件夹</h2><button id="closeFolderSheet" type="button">×</button></div><label for="folderName">文件夹名称</label><input id="folderName" type="text" placeholder="例如：编程"><div class="sheet-actions"><button class="secondary" id="cancelFolder" type="button">取消</button><button class="primary" id="saveFolder" type="button">确定</button></div></section>
+  <section class="bottom-sheet batch-move-sheet" id="batchMoveSheet" hidden role="dialog" aria-modal="true" aria-labelledby="batchMoveTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="batchMoveTitle">移动到文件夹</h2><button id="closeBatchMove" type="button">×</button></div><div class="folder-options" id="batchFolderOptions"></div></section>
+  <section class="bottom-sheet delete-confirm global-confirm" id="batchDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="batchDeleteTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="batchDeleteTitle">删除所选笔记</h2><button id="closeBatchDelete" type="button">×</button></div><p id="batchDeleteText">删除后无法恢复。</p><div class="sheet-actions"><button class="secondary" id="cancelBatchDelete" type="button">取消</button><button class="danger-button" id="confirmBatchDelete" type="button">确认删除</button></div></section>
+  <section class="bottom-sheet note-action-sheet" id="noteActionSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteActionTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><div><p class="eyebrow">笔记操作</p><h2 id="noteActionTitle">管理笔记</h2></div><button id="noteActionClose" type="button" aria-label="关闭">×</button></div>
+    <div class="note-action-summary"><span class="note-action-thumb" id="noteActionThumb">笔记</span><strong id="noteActionName"></strong></div>
+    <div id="noteActionMenu"><button class="sheet-menu-button" id="renameNoteAction" type="button">重命名笔记 <span>›</span></button><button class="sheet-menu-button" id="moveNoteAction" type="button">移动到... <span>›</span></button><button class="sheet-menu-button danger-text" id="deleteNoteAction" type="button">删除笔记 <span>›</span></button><button class="sheet-menu-button muted-action" id="cancelNoteAction" type="button">取消</button></div>
+    <div class="inline-action" id="renameNotePanel" hidden><label for="renameNoteInput">新的标题</label><input id="renameNoteInput" type="text"><div class="sheet-actions"><button class="secondary" id="cancelRenameNote" type="button">取消</button><button class="primary" id="confirmRenameNote" type="button">保存名称</button></div></div>
+    <div class="inline-action delete-confirm" id="deleteNotePanel" hidden><strong>确定删除这篇笔记吗？</strong><p>删除后无法恢复。</p><div class="sheet-actions"><button class="secondary" id="cancelDeleteNote" type="button">取消</button><button class="danger-button" id="confirmDeleteNote" type="button">确认删除</button></div></div>
+  </section>
+  <section class="bottom-sheet template-sheet" id="noteTemplateSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteTemplateTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><button class="icon-sheet-button" id="cancelTemplate" type="button" aria-label="取消">×</button><h2 id="noteTemplateTitle">笔记模板设置</h2><button class="icon-sheet-button" id="confirmTemplate" type="button" aria-label="确认">✓</button></div>
+    <p class="template-subtitle">为新笔记选择封面和纸张样式</p>
+    <div class="template-preview"><div class="template-cover-choice"><div class="template-cover" id="templateCoverPreview"><span>NOTE</span><small>默认封面</small></div><label class="optional-cover-button" for="noteCoverFile">＋ 上传自定义封面</label></div><input id="noteCoverFile" type="file" accept="image/*" hidden><div class="template-paper template-blank color-white" id="templatePaperPreview"></div></div>
+    <nav class="template-categories" aria-label="模板分类"><button class="active" type="button" data-template-category="basic">基础</button><button type="button" data-template-category="writing">书写</button><button type="button" data-template-category="plan">计划</button><button type="button" data-template-category="work">工作学习</button></nav>
+    <div class="template-options" aria-label="纸张样式"><button class="active" type="button" data-template-pattern="blank"><i class="template-paper template-blank color-white"></i><span>空白</span></button><button type="button" data-template-pattern="wide"><i class="template-paper template-wide color-white"></i><span>宽横格</span></button><button type="button" data-template-pattern="narrow"><i class="template-paper template-narrow color-white"></i><span>窄横格</span></button><button type="button" data-template-pattern="dot"><i class="template-paper template-dot color-white"></i><span>点阵</span></button><button type="button" data-template-pattern="smallGrid"><i class="template-paper template-smallGrid color-white"></i><span>小格纹</span></button><button type="button" data-template-pattern="mediumGrid"><i class="template-paper template-mediumGrid color-white"></i><span>中格纹</span></button></div>
+    <div class="template-colors" aria-label="纸张颜色"><span>纸张颜色</span><button class="active color-white-choice" type="button" data-template-color="white" aria-label="白色"></button><button class="color-cream-choice" type="button" data-template-color="cream" aria-label="米黄色"></button><button class="color-black-choice" type="button" data-template-color="black" aria-label="黑色"></button></div>
+  </section>
+  <section class="bottom-sheet" id="noteMoveSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteMoveTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="noteMoveTitle">移动到...</h2><button id="closeNoteMove" type="button" aria-label="关闭">×</button></div><div class="folder-options" id="noteMoveOptions"></div></section>
+  <section class="bottom-sheet folder-action-sheet" id="folderActionSheet" hidden role="dialog" aria-modal="true" aria-labelledby="folderActionTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><div><p class="eyebrow">文件夹操作</p><h2 id="folderActionTitle">管理文件夹</h2></div><button id="folderActionClose" type="button" aria-label="关闭">×</button></div>
+    <div class="folder-action-summary"><span class="folder-action-thumb" id="folderActionThumb">▱</span><span><strong id="folderActionName"></strong><small class="sync-badge local" id="folderCoverStatus" hidden>本地暂存</small></span></div>
+    <div id="folderActionMenu"><button class="sheet-menu-button" id="renameFolderAction" type="button">重命名文件夹 <span>›</span></button><label class="sheet-menu-button folder-upload-action" for="folderCoverFile">上传封面 <span>›</span></label><input id="folderCoverFile" type="file" accept="image/*" hidden><button class="sheet-menu-button danger-text" id="deleteFolderAction" type="button">删除文件夹 <span>›</span></button><button class="sheet-menu-button muted-action" id="cancelFolderAction" type="button">取消</button></div>
+    <div class="inline-action" id="renameFolderPanel" hidden><label for="renameFolderInput">新的文件夹名称</label><input id="renameFolderInput" type="text"><div class="sheet-actions"><button class="secondary" id="cancelRenameFolder" type="button">取消</button><button class="primary" id="confirmRenameFolder" type="button">保存名称</button></div></div>
+    <div class="inline-action delete-confirm" id="deleteFolderPanel" hidden><strong>确认删除文件夹？</strong><p id="deleteFolderMessage">删除文件夹后，里面的笔记将移到根目录，确认删除？</p><div class="sheet-actions"><button class="secondary" id="cancelDeleteFolder" type="button">取消</button><button class="danger-button" id="confirmDeleteFolder" type="button">确认删除</button></div></div>
+  </section>
+  <section class="bottom-sheet delete-confirm global-confirm" id="cardDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="cardDeleteConfirmTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="cardDeleteConfirmTitle">删除知识卡片</h2><button id="closeCardDeleteConfirm" type="button">×</button></div><p>删除后无法恢复，确定继续吗？</p><div class="sheet-actions"><button class="secondary" id="cancelCardDelete" type="button">取消</button><button class="danger-button" id="confirmCardDelete" type="button">确认删除</button></div></section>
+  <section class="bottom-sheet" id="bookSheet" hidden role="dialog" aria-modal="true" aria-labelledby="bookSheetTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="bookSheetTitle">新建书本</h2><button id="bookSheetClose" type="button">×</button></div>
+    <label for="bookName">书本名称</label><input id="bookName" type="text" placeholder="例如：Agent 探索">
+    <label class="cover-picker" for="bookCoverFile"><span id="bookCoverPreview">▤</span><strong>上传封面</strong><small>支持 JPG、PNG 等图片</small></label><input id="bookCoverFile" type="file" accept="image/*" hidden>
+    <div class="sheet-actions"><button class="secondary" id="cancelBook" type="button">取消</button><button class="primary" id="saveBookButton" type="button">保存书本</button></div>
+  </section>
+  <section class="bottom-sheet" id="profileSheet" hidden role="dialog" aria-modal="true" aria-labelledby="profileSheetTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="profileSheetTitle">编辑个人资料</h2><button id="profileSheetClose" type="button">×</button></div>
+    <label class="avatar-picker" for="profileAvatarFile"><span><img id="profileAvatarPreview" alt=""><svg class="camera-icon" id="profileCameraIcon" viewBox="0 0 32 32" aria-hidden="true"><path d="M10.5 9.5 12 7h8l1.5 2.5H25a3 3 0 0 1 3 3V23a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V12.5a3 3 0 0 1 3-3h3.5Z"/><circle cx="16" cy="17.5" r="5"/></svg></span><strong>上传头像</strong></label><input id="profileAvatarFile" type="file" accept="image/*" hidden>
+    <label for="profileNicknameInput">昵称</label><input id="profileNicknameInput" type="text">
+    <label for="profileSignatureInput">签名</label><textarea id="profileSignatureInput" rows="3"></textarea>
+    <div class="sheet-actions"><button class="secondary" id="cancelProfile" type="button">取消</button><button class="primary" id="saveProfile" type="button">保存资料</button></div>
+  </section>
+  <section class="fullscreen-page" id="rulesPage" hidden aria-labelledby="rulesTitle"><header><button id="closeRulesButton" type="button">← 返回</button><h2 id="rulesTitle">规则与明细</h2></header><div class="rules-body"><article class="level-card compact-level"><small id="rulesLevel">LV.1 · 学术萌新</small><strong><span id="rulesPoints">0</span> 能量</strong><div class="level-track"><i id="rulesProgress"></i></div></article><h3>等级说明</h3><div class="responsive-table" id="levelTable"></div><h3>学习行为与积分</h3><div class="responsive-table" id="pointsTable"></div></div></section>
+  <section class="fullscreen-page" id="attachmentPreview" hidden><header><button id="closeAttachmentPreview" type="button">← 返回笔记</button><h2 id="attachmentPreviewTitle">附件预览</h2></header><div class="preview-body" id="attachmentPreviewBody"></div></section>
+  <div class="batch-toolbar" id="batchToolbar" hidden><button id="batchShare" type="button">⌯<span>分享</span></button><button id="batchExport" type="button">⇧<span>导出</span></button><button id="batchMove" type="button">▱<span>移动</span></button><button id="batchDelete" type="button">⌫<span>删除</span></button><button id="batchSelectAll" type="button">☑<span>全选</span></button></div>
+  <div class="review-manage-toolbar" id="reviewManageToolbar" hidden><button id="reviewSelectAll" type="button">全选</button><button class="danger-text" id="reviewDeleteSelected" type="button">删除</button><button id="reviewUnmasterSelected" type="button">移出已掌握</button><button id="reviewCancelEdit" type="button">取消</button></div>
+  <section class="bottom-sheet" id="reviewCardActionSheet" hidden role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="reviewActionTitle">管理卡片</h2><button id="closeReviewAction" type="button">×</button></div><button class="sheet-menu-button" id="toggleReviewCardStatus" type="button"></button><button class="sheet-menu-button danger-text" id="deleteReviewCard" type="button">删除此卡片</button></section>
+  <section class="bottom-sheet delete-confirm global-confirm" id="reviewDeleteConfirm" hidden role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-heading"><h2>删除复习卡片</h2><button id="closeReviewDelete" type="button">×</button></div><p id="reviewDeleteText"></p><div class="sheet-actions"><button class="secondary" id="cancelReviewDelete" type="button">取消</button><button class="danger-button" id="confirmReviewDelete" type="button">确认删除</button></div></section>
+  <section class="bottom-sheet" id="cardSheet" hidden role="dialog" aria-modal="true" aria-labelledby="cardSheetTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-heading"><h2 id="cardSheetTitle">新建知识卡片</h2><button id="cardSheetClose" type="button" aria-label="关闭卡片编辑器">×</button></div>
+    <label for="cardFront">正面</label><input id="cardFront" type="text" placeholder="概念或问题"><div class="card-image-editor"><button id="chooseCardFrontImage" type="button">🖼️ 插入图片</button><input id="cardFrontImageFile" type="file" accept="image/*" hidden><img id="cardFrontImagePreview" alt="正面图片预览" hidden><button class="remove-card-image" id="removeCardFrontImage" type="button" hidden>移除图片</button></div>
+    <label for="cardBack">背面</label><textarea id="cardBack" rows="6" placeholder="解释或答案"></textarea><div class="card-image-editor"><button id="chooseCardBackImage" type="button">🖼️ 插入图片</button><input id="cardBackImageFile" type="file" accept="image/*" hidden><img id="cardBackImagePreview" alt="背面图片预览" hidden><button class="remove-card-image" id="removeCardBackImage" type="button" hidden>移除图片</button></div>
+    <p class="input-hint">卡片保存在当前浏览器，不会上传到服务器。</p>
+    <div class="sheet-actions"><button class="danger-button" id="deleteCard" type="button" hidden>删除</button><button class="secondary" id="cancelCard" type="button">取消</button><button class="primary" id="saveCard" type="button">保存</button></div>
+  </section>
+  <section class="bottom-sheet import-sheet" id="importSheet" hidden role="dialog" aria-modal="true" aria-labelledby="importSheetTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-heading"><div><p class="eyebrow">导入到求知</p><h2 id="importSheetTitle">选择导入方式</h2></div><button id="importSheetClose" type="button" aria-label="关闭导入弹窗">×</button></div>
+    <div class="import-options" id="importOptions">
+      <button class="import-option" type="button" data-import-panel="linkImportPanel"><span>01</span><strong>从链接导入</strong><small>支持知乎、小红书、抖音等链接</small><b>↗</b></button>
+      <button class="import-option" type="button" data-import-panel="manualImportPanel"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+      <button class="import-option" type="button" data-import-panel="imageImportPanel"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+    </div>
+    <div class="import-panel" id="linkImportPanel" hidden>
+      <button class="import-back" type="button">← 选择其他方式</button><h3>粘贴链接或分享文案</h3>
+      <textarea id="linkImportText" rows="4" placeholder="例如：快来看看 https://xhslink.com/abc123 复制打开"></textarea>
+      <p class="import-feedback" id="linkImportFeedback" hidden></p>
+      <button class="primary import-submit" id="parseLinkButton" type="button">解析链接</button>
+    </div>
+    <div class="import-panel" id="manualImportPanel" hidden>
+      <button class="import-back" type="button">← 选择其他方式</button><h3>手动创建内容</h3>
+      <textarea id="manualImportText" rows="7" placeholder="输入或粘贴需要解读的文字……"></textarea>
+      <button class="primary import-submit" id="confirmManualImport" type="button">放入输入框</button>
+    </div>
+    <div class="import-panel" id="imageImportPanel" hidden>
+      <button class="import-back" type="button">← 选择其他方式</button><h3>从截图识别文字</h3>
+      <label class="image-picker" for="imageImportFile"><strong>选择截图或拍照</strong><small>支持手机相册和相机</small></label>
+      <input id="imageImportFile" type="file" accept="image/*" capture="camera" hidden>
+      <p class="import-feedback" id="imageImportFeedback">选择图片后将自动开始识别。</p>
+    </div>
+  </section>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <nav class="bottom-nav" aria-label="主功能导航">
+    <button class="bottom-tab" type="button" data-app-page="cardsPage" aria-selected="false"><span aria-hidden="true">▣</span><strong>卡片</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="notesPage" aria-selected="false"><span aria-hidden="true">▤</span><strong>笔记</strong></button>
+    <button class="bottom-tab knowledge-tab active" type="button" data-app-page="knowledge" aria-selected="true"><span aria-hidden="true">⌕</span><strong>求知</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="reviewPage" aria-selected="false"><span aria-hidden="true">◇</span><strong>复习</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="petPage" aria-selected="false"><span aria-hidden="true">◉</span><strong>看山</strong></button>
+  </nav>
   </div>
   <script src="/static/app.js" defer></script>
 </body>

@@ -96,6 +96,7 @@ def test_discover_returns_complete_candidate_and_distinct_scores(runtime) -> Non
     assert response.status_code == 200
     body = response.json()
     assert body["session_id"]
+    assert body["code"] == 0
     item = body["candidates"][0]
     assert item["candidate"]["id"] == "pid"
     assert item["candidate"]["concept"] == "PID 控制"
@@ -134,6 +135,81 @@ def test_invalid_request_returns_422(runtime) -> None:
     assert client.post("/api/chat", json={"message": "missing session"}).status_code == 422
 
 
+def test_ocr_returns_text(runtime, monkeypatch) -> None:
+    client, service, _ = runtime
+    monkeypatch.setattr(service, "ocr", lambda image_bytes: {"code": 0, "text": "截图中的文字"})
+    response = client.post("/api/ocr", files={"file": ("screen.png", b"fake-png", "image/png")})
+    assert response.status_code == 200
+    assert response.json() == {"code": 0, "text": "截图中的文字"}
+
+
+def test_ocr_rejects_non_image(runtime) -> None:
+    client, _, _ = runtime
+    response = client.post("/api/ocr", files={"file": ("note.txt", b"hello", "text/plain")})
+    assert response.status_code == 415
+
+
+def test_note_attachments_are_bound_to_note_id(runtime, monkeypatch, tmp_path) -> None:
+    from logic_coloc.api import note_store
+
+    notes_file = tmp_path / "notes.json"
+    notes_file.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setattr(note_store, "NOTES_FILE", notes_file)
+    monkeypatch.setattr(note_store, "DATA_DIR", tmp_path)
+    first = {
+        "id": "binary-tree", "title": "二叉树", "folderId": "default",
+        "attachments": [{"noteId": "binary-tree", "name": "tree.pdf", "url": "/uploads/tree.pdf"}],
+    }
+    second = {
+        "id": "backtracking", "title": "回溯", "folderId": "default",
+        "attachments": [{"noteId": "binary-tree", "name": "wrong.pdf", "url": "/uploads/wrong.pdf"}],
+    }
+    assert runtime[0].post("/api/notes/save", json=first).status_code == 200
+    assert runtime[0].post("/api/notes/save", json=second).status_code == 200
+    notes = runtime[0].get("/api/notes").json()["notes"]
+    assert notes[0]["attachments"][0]["noteId"] == "binary-tree"
+    assert notes[1]["attachments"] == []
+
+
+def test_move_note_updates_folder(runtime, monkeypatch, tmp_path) -> None:
+    from logic_coloc.api import note_store
+
+    notes_file = tmp_path / "notes.json"
+    notes_file.write_text('[{"id":"move-me","title":"笔记","attachments":[]}]\n', encoding="utf-8")
+    monkeypatch.setattr(note_store, "NOTES_FILE", notes_file)
+    monkeypatch.setattr(note_store, "DATA_DIR", tmp_path)
+    response = runtime[0].patch("/api/notes/move", json={"id": "move-me", "folderId": "research"})
+    assert response.status_code == 200
+    assert runtime[0].get("/api/notes").json()["notes"][0]["folderId"] == "research"
+
+
+def test_legacy_duplicate_attachment_is_kept_by_first_note_only(runtime, monkeypatch, tmp_path) -> None:
+    from logic_coloc.api import note_store
+
+    notes_file = tmp_path / "notes.json"
+    notes_file.write_text(
+        '[{"id":"tree","title":"二叉树","attachments":[{"id":"same","name":"tree.pdf","url":"/tree.pdf"}]},'
+        '{"id":"back","title":"回溯","attachments":[{"id":"same","name":"tree.pdf","url":"/tree.pdf"}]}]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(note_store, "NOTES_FILE", notes_file)
+    monkeypatch.setattr(note_store, "DATA_DIR", tmp_path)
+    notes = runtime[0].get("/api/notes").json()["notes"]
+    assert notes[0]["attachments"][0]["noteId"] == "tree"
+    assert notes[1]["attachments"] == []
+
+
+def test_legacy_default_folder_migrates_to_root(runtime, monkeypatch, tmp_path) -> None:
+    from logic_coloc.api import note_store
+
+    notes_file = tmp_path / "notes.json"
+    notes_file.write_text('[{"id":"root-note","title":"根目录笔记","folderId":"default","attachments":[]}]\n', encoding="utf-8")
+    monkeypatch.setattr(note_store, "NOTES_FILE", notes_file)
+    monkeypatch.setattr(note_store, "DATA_DIR", tmp_path)
+    notes = runtime[0].get("/api/notes").json()["notes"]
+    assert notes[0]["folderId"] is None
+
+
 @pytest.mark.parametrize("text", ["", "   "])
 def test_blank_text_returns_422(runtime, text: str) -> None:
     client, _, _ = runtime
@@ -170,3 +246,25 @@ def test_explanation_generation_backend_error_returns_sanitized_503(runtime) -> 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "LLM_BACKEND_UNAVAILABLE"
     assert "connection details" not in response.text
+
+
+def test_discover_backend_error_returns_structured_business_error(runtime) -> None:
+    client, service, _ = runtime
+    internal = "extract_features: LLM 调用失败: private gateway details"
+    service.graph = type("UnavailableGraph", (), {"invoke": lambda self, state: {"errors": [internal]}})()
+    response = client.post("/api/discover", json={"text": "负反馈"})
+    assert response.status_code == 200
+    assert response.json() == {
+        "code": 500,
+        "message": "模型服务异常，请稍后重试",
+        "session_id": "",
+        "concept": {"name": "负反馈", "domain": None, "description": None, "mechanism": None, "key_terms": []},
+        "candidates": [],
+        "results": [],
+        "mappings": [],
+        "critiques": [],
+        "learning_reports": [],
+        "report": "",
+        "errors": ["MODEL_SERVICE_UNAVAILABLE"],
+    }
+    assert "private gateway details" not in response.text

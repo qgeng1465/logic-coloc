@@ -73,6 +73,8 @@ class DiscoverCandidateResult(BaseModel):
 
     candidate: CandidateConcept
     homonomy_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    retrieval_score_reason: str = ""
+    homonomy_score_reason: str = ""
     mapping: MappingResult | None = None
     critique: CritiqueResult | None = None
     learning_report: DiscoverLearningReport | None = None
@@ -81,6 +83,8 @@ class DiscoverCandidateResult(BaseModel):
 class DiscoverResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    code: int = 0
+    message: str = ""
     session_id: str = ""
     concept: Concept
     candidates: list[DiscoverCandidateResult] = Field(default_factory=list)
@@ -96,3 +100,47 @@ class SessionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session: Session
+
+
+class OCRResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: int = 0
+    text: str
+
+class CardPayload(BaseModel):
+    id: str
+    front: str
+    back: str
+    source: str = ""
+    sessionId: str = ""
+    createdAt: str = ""
+
+
+class NoteAttachment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    noteId: str
+    name: str
+    url: str
+    mimeType: str = ""
+    size: int = 0
+    syncStatus: str = "synced"
+
+
+class NotePayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    title: str
+    content: str = ""
+    coverUrl: str = ""
+    folderId: str | None = None
+    attachments: list[NoteAttachment] = Field(default_factory=list)
+
+
+class NoteMovePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    folderId: str | None = None

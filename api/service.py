@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any
 
 from ..agents.graph import build_graph
@@ -19,6 +20,7 @@ from .schemas import (
     ExplainRequest,
     ExplainResponse,
     SessionResponse,
+    OCRResponse,
 )
 
 
@@ -41,6 +43,18 @@ class LLMBackendUnavailableError(ServiceError):
 class AgentExecutionError(ServiceError):
     def __init__(self) -> None:
         super().__init__(status_code=500, code="AGENT_EXECUTION_FAILED", message="处理请求时发生错误。")
+
+
+class OCRExecutionError(ServiceError):
+    def __init__(self, message: str = "图片识别失败，请尝试更清晰的截图。") -> None:
+        super().__init__(status_code=422, code="OCR_FAILED", message=message)
+
+
+@lru_cache(maxsize=1)
+def _get_ocr_engine():
+    from rapidocr_onnxruntime import RapidOCR
+
+    return RapidOCR()
 
 
 class LogicColocService:
@@ -153,25 +167,58 @@ class LogicColocService:
                 ),
             )
         candidate_results = []
+        public_results = []
         for candidate in candidates:
             retrieval_score = retrieval_scores.get(candidate.id, candidate.retrieval_score)
+            retrieval_reason = self._retrieval_reason(request.text, candidate, retrieval_score)
             candidate_copy = candidate.model_copy(update={"retrieval_score": retrieval_score})
             homonomy_result = homonomy_by_id.get(candidate.id)
+            homonomy_reason = self._homonomy_reason(homonomy_result.score if homonomy_result else None, candidate)
             candidate_results.append(
                 DiscoverCandidateResult(
                     candidate=candidate_copy,
                     homonomy_score=homonomy_result.score if homonomy_result else None,
+                    retrieval_score_reason=retrieval_reason,
+                    homonomy_score_reason=homonomy_reason,
                     mapping=mapping_by_id.get(candidate.id),
                     critique=critique_by_id.get(candidate.id),
                     learning_report=report_by_id.get(candidate.id),
                 )
             )
+            report = report_by_id.get(candidate.id)
+            critique = critique_by_id.get(candidate.id)
+            homology_result = homonomy_by_id.get(candidate.id)
+            if homology_result:
+                metrics = {
+                    item.dimension: round(item.similarity, 4)
+                    for item in (report.dimension_comparisons if report else [])
+                }
+                public_results.append(homology_result.model_copy(update={
+                    "concept": candidate.concept,
+                    "domain": candidate.domain,
+                    "retrieval_score": retrieval_score,
+                    "reliability": ({
+                        "RELIABLE_WITH_LIMITS": "有限成立",
+                        "NEEDS_REVIEW": "待检验",
+                        "REJECTED": "不成立",
+                        "INSUFFICIENT_EVIDENCE": "证据不足",
+                    }.get(report.verdict, "待检验") if report else "待检验"),
+                    "summary": report.mechanism_summary if report else candidate.description,
+                    "mechanism": report.mechanism_summary if report else candidate.mechanism,
+                    "critique": (critique.summary if critique else (report.verdict_reason if report else "")),
+                    "metrics": metrics,
+                    "references": [source.id for source in (report.source_references if report else candidate.sources)],
+                    "retrieval_score_reason": retrieval_reason,
+                    "homonomy_score_reason": homonomy_reason,
+                    "retrieval_source": "vector_db",
+                    "homonomy_source": "llm_rubric",
+                }))
         public_errors = ["部分候选处理失败。"] if result.get("errors") else []
         return DiscoverResponse(
             session_id=session_id,
             concept=knowledge.concept,
             candidates=candidate_results,
-            results=[homonomy_by_id[item.candidate.id] for item in candidate_results if item.candidate.id in homonomy_by_id],
+            results=public_results,
             mappings=[mapping_by_id[item.candidate.id] for item in candidate_results if item.candidate.id in mapping_by_id],
             critiques=[critique_by_id[item.candidate.id] for item in candidate_results if item.candidate.id in critique_by_id],
             learning_reports=[report_by_id[item.candidate.id] for item in candidate_results if item.candidate.id in report_by_id],
@@ -179,5 +226,37 @@ class LogicColocService:
             errors=public_errors,
         )
 
+    @staticmethod
+    def _retrieval_reason(query: str, candidate: Any, score: float | None) -> str:
+        q = query.lower()
+        hits = [term for term in [candidate.concept, candidate.domain, *candidate.keywords] if term and term.lower() in q]
+        if hits:
+            return f"确定性检索分数来自 Retriever 的词项/领域匹配；命中：{'、'.join(hits[:3])}。"
+        return f"确定性检索分数来自 Retriever 的逻辑画像相似度（当前值 {float(score or 0):.1%}），不是模型生成。"
+
+    @staticmethod
+    def _homonomy_reason(score: float | None, candidate: Any) -> str:
+        value = float(score or 0)
+        if value >= 0.90:
+            band = "90–100%：底层机制几乎完全对应"
+        elif value >= 0.70:
+            band = "70–89%：共享宏观结构，具体实现有差异"
+        elif value >= 0.50:
+            band = "50–69%：抽象概念相似，但机制有本质区别"
+        else:
+            band = "0–49%：相似度低，可能是强行类比"
+        return f"确定性五维逻辑画像余弦相似度为 {value:.1%}；按评分量表属于{band}。候选机制：{candidate.mechanism or candidate.description}"
+
     def get_session(self, session_id: str) -> SessionResponse:
         return SessionResponse(session=self.session_manager.get_session(session_id))
+
+    def ocr(self, image_bytes: bytes) -> OCRResponse:
+        try:
+            result, _ = _get_ocr_engine()(image_bytes)
+        except Exception as exc:
+            logger.exception("OCR execution failed")
+            raise OCRExecutionError() from exc
+        lines = [str(item[1]).strip() for item in (result or []) if len(item) > 1 and str(item[1]).strip()]
+        if not lines:
+            raise OCRExecutionError("图片中没有识别到文字，请尝试更清晰的截图。")
+        return OCRResponse(text="\n".join(lines))
