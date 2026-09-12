@@ -33,7 +33,7 @@ _load_dotenv()
 # LLM 端点：本机 claude-openai-bridge（Anthropic 兼容 /v1/messages）
 # 也可改为 https://api.deepseek.com/anthropic 直连
 BRIDGE   = os.environ.get("LC_BRIDGE", "https://api.deepseek.com/anthropic")
-MODEL    = os.environ.get("LC_MODEL", "deepseek-chat")   # kimi-k3 / glm-4.6 / deepseek-chat
+MODEL    = os.environ.get("LC_MODEL", "chatgpt-4o-latest")   # OpenAI-compatible model
 API_KEY  = os.environ.get("LC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 TIMEOUT  = int(os.environ.get("LC_TIMEOUT", "180"))
 # thinking 参数：实测 DeepSeek 兼容端点上「disabled」+ 低 max_tokens 会偶发空响应，

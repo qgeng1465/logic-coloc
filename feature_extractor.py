@@ -52,10 +52,19 @@ def llm(system, user, max_tokens=2048, temperature=0.3, retries=2):
                        "messages": [{"role": "user", "content": user}]}
             if config.THINKING and config.THINKING.lower() != "none":
                 payload["thinking"] = {"type": config.THINKING}
-            r = requests.post(f"{config.BRIDGE}/v1/messages", json=payload, headers=headers, timeout=config.TIMEOUT)
+            if config.BRIDGE.rstrip("/").endswith("api.openai-next.com") and config.API_KEY.startswith("sk-"):
+                openai_payload = {"model": config.MODEL, "max_tokens": max_tokens, "temperature": temperature,
+                                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+                r = requests.post(f"{config.BRIDGE.rstrip('/')}/v1/chat/completions", json=openai_payload,
+                                   headers={"Authorization": f"Bearer {config.API_KEY}", "Content-Type": "application/json"}, timeout=config.TIMEOUT)
+            else:
+                r = requests.post(f"{config.BRIDGE}/v1/messages", json=payload, headers=headers, timeout=config.TIMEOUT)
             r.raise_for_status()
             data = r.json()
-            text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
+            text = (data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if data.get("choices") else "")
+            if not text:
+                text = "".join(c.get("text", "") for c in data.get("content", []) if c.get("type") == "text")
             if text.strip():
                 return text
             last = f"空内容: {json.dumps(data)[:200]}"
