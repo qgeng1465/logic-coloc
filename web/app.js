@@ -1,10 +1,20 @@
-const API_BASE = "http://127.0.0.1:8000";
+// 后端地址。默认为空 = 与页面同源（推荐：前后端部署在同一个域名下，
+// 这样静态资源、/api、CORS 全部天然打通）。
+// 若必须前后端分离部署，在 index.html 的 <script src="/static/app.js"> 之前插入：
+//   <script>window.LC_API_BASE = "https://你的后端域名";</script>
+// 注意：app.js 里还有两处写死的相对路径（/api/user/avatar、/api/user/update，
+// 在「保存资料」里）没走 apiUrl()，分离部署时这两处会失效。
+const API_BASE = window.LC_API_BASE || "";
 const apiUrl = (path) => `${API_BASE}${path}`;
 const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [] };
-let explainDraftText = localStorage.getItem("draft_explain") || "";
-let discoverDraftText = localStorage.getItem("draft_discover") || "";
-// Remove legacy shared-draft keys that caused cross-tab ghost text.
-["globalInputText", "currentText", "draft", "inputText"].forEach((key) => localStorage.removeItem(key));
+const draftStorageKeys = {
+  explainPanel: "logic_coloc_draft_explain_v2",
+  discoverPanel: "logic_coloc_draft_discover_v2",
+};
+let explainDraftText = localStorage.getItem(draftStorageKeys.explainPanel) || "";
+let discoverDraftText = localStorage.getItem(draftStorageKeys.discoverPanel) || "";
+// V1 曾在两个功能间复用草稿；不再迁移这些值，避免污染继续复活。
+["draft_explain", "draft_discover", "globalInputText", "currentText", "draft", "inputText"].forEach((key) => localStorage.removeItem(key));
 let historyFilterType = "读懂它", pendingHistoryDeleteId = null;
 
 async function checkBackendHealth() {
@@ -87,16 +97,26 @@ function extractFirstUrl(value) {
 
 let toastTimer;
 function showToast(message) { window.clearTimeout(toastTimer); $("toast").textContent = message; $("toast").hidden = false; toastTimer = window.setTimeout(() => { $("toast").hidden = true; }, 3200); }
+function draftForPanel(panelId) { return panelId === "discoverPanel" ? discoverDraftText : explainDraftText; }
+function setDraftForPanel(panelId, value) {
+  const text = String(value ?? "");
+  if (panelId === "discoverPanel") discoverDraftText = text;
+  else explainDraftText = text;
+  if (text) localStorage.setItem(draftStorageKeys[panelId], text);
+  else localStorage.removeItem(draftStorageKeys[panelId]);
+  const inputId = panelId === "discoverPanel" ? "discoverText" : "explainText";
+  $(inputId).value = text;
+}
 function openImportSheet(id) { const target = state.activeKnowledgePanel === "discoverPanel" ? "discoverText" : "explainText"; state.importPanelTarget = state.activeKnowledgePanel; $("manualImportText").value = state.activeKnowledgePanel === "discoverPanel" ? discoverDraftText : explainDraftText; $("linkImportText").value = ""; $("sheetBackdrop").hidden = false; $(id).hidden = false; document.body.classList.add("sheet-open"); }
 function closeImportSheet() { $("importSheet").hidden = true; $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); showImportPanel(null); }
 function showImportPanel(panelId) { $("importOptions").hidden = Boolean(panelId); document.querySelectorAll(".import-panel").forEach((panel) => { panel.hidden = panel.id !== panelId; }); }
 function targetInput() { return $(state.importTarget); }
 function revealKnowledgeEditor() { $("knowledgeLauncher").hidden = true; ["explainPanel", "discoverPanel"].forEach((id) => { $(id).hidden = id !== state.activeKnowledgePanel; }); }
-function placeImportedText(text, message, panelId = state.importPanelTarget) { const inputId = panelId === "discoverPanel" ? "discoverText" : "explainText"; $(inputId).value = text; if (panelId === "discoverPanel") { discoverDraftText = text; localStorage.setItem("draft_discover", text); } else { explainDraftText = text; localStorage.setItem("draft_explain", text); } closeImportSheet(); state.activeKnowledgePanel = panelId; state.importTarget = inputId; revealKnowledgeEditor(); showToast(message); $(inputId).focus(); }
+function placeImportedText(text, message, panelId = state.importPanelTarget) { const inputId = panelId === "discoverPanel" ? "discoverText" : "explainText"; setDraftForPanel(panelId, text); closeImportSheet(); state.activeKnowledgePanel = panelId; state.importTarget = inputId; revealKnowledgeEditor(); showToast(message); $(inputId).focus(); }
 function showKnowledgeLauncher(panelId) {
   state.activeKnowledgePanel = panelId; state.importTarget = panelId === "discoverPanel" ? "discoverText" : "explainText";
-  $("explainText").value = explainDraftText;
-  $("discoverText").value = discoverDraftText;
+  // 只恢复当前功能的草稿，切换功能时绝不改写另一个输入框。
+  $(state.importTarget).value = draftForPanel(panelId);
   document.querySelectorAll(".tab").forEach((item) => { const active = item.dataset.panel === panelId; item.classList.toggle("active", active); item.setAttribute("aria-selected", String(active)); });
   const discovering = panelId === "discoverPanel";
   $("pageTitle").textContent = discovering ? "探索它在跨学科领域的逻辑同源" : "把专业知识翻译成你能理解的语言";
@@ -109,8 +129,7 @@ function showKnowledgeLauncher(panelId) {
   window.scrollTo({ top: document.querySelector(".mode-tabs").offsetTop, behavior: "smooth" });
 }
 function clearDraftForPanel(panelId) {
-  if (panelId === "discoverPanel") { discoverDraftText = ""; localStorage.removeItem("draft_discover"); $("discoverText").value = ""; }
-  else { explainDraftText = ""; localStorage.removeItem("draft_explain"); $("explainText").value = ""; }
+  setDraftForPanel(panelId, "");
 }
 async function parseImportedLink() {
   const url = extractFirstUrl($("linkImportText").value); const button = $("parseLinkButton");
@@ -169,6 +188,21 @@ function renderCoreAnswer(content) {
   renderRichText($("explanationCore"), selected.join("\n\n") || clean.slice(0, 500));
   renderRichText($("explanation"), clean);
   $("answerDisclosure").open = false;
+}
+
+function renderLogicProfile(profile) {
+  const container = $("profileRows"); container.replaceChildren();
+  if (!profile) { $("logicProfile").hidden = true; return; }
+  Object.entries(profileLabels).forEach(([key, label]) => {
+    const value = Math.max(0, Math.min(1, Number(profile[key] ?? 0)));
+    const row = document.createElement("div"); row.className = "profile-row";
+    const name = document.createElement("span"); name.textContent = label;
+    const track = document.createElement("div"); track.className = "track";
+    const fill = document.createElement("div"); fill.className = "fill"; fill.style.width = `${Math.round(value * 100)}%`;
+    const number = document.createElement("span"); number.className = "profile-value"; number.textContent = `${Math.round(value * 100)}%`;
+    track.append(fill); row.append(name, track, number); container.append(row);
+  });
+  $("logicProfile").hidden = true; $("profileToggle").setAttribute("aria-expanded", "false"); $("profileToggle").textContent = "查看逻辑画像 ›";
 }
 
 function openMappingSheet(candidateName, mappings) {
@@ -237,24 +271,6 @@ async function syncLocalCards() {
   if (changed) { renderBooks(); buildReviewQueue(); }
 }
 
-function renderProfile(profile) {
-  const container = $("profileRows");
-  container.replaceChildren();
-  if (!profile) { $("logicProfile").hidden = true; return; }
-  Object.entries(profileLabels).forEach(([key, label]) => {
-    const value = Math.max(0, Math.min(1, Number(profile[key] ?? 0)));
-    const row = document.createElement("div"); row.className = "profile-row";
-    const name = document.createElement("span"); name.textContent = label;
-    const track = document.createElement("div"); track.className = "track";
-    const fill = document.createElement("div"); fill.className = "fill"; fill.style.width = `${Math.round(value * 100)}%`;
-    const number = document.createElement("span"); number.className = "profile-value"; number.textContent = `${Math.round(value * 100)}%`;
-    track.append(fill); row.append(name, track, number); container.append(row);
-  });
-  $("logicProfile").hidden = true;
-  $("profileToggle").setAttribute("aria-expanded", "false");
-  $("profileToggle").textContent = "查看逻辑画像 ›";
-}
-
 function createDisclosure(title, className = "") {
   const details = document.createElement("details"); details.className = `nested-disclosure ${className}`.trim();
   const summary = document.createElement("summary"); summary.textContent = title;
@@ -285,14 +301,14 @@ async function explain() {
   setLoading(true, "正在提取逻辑结构并请求模型…", $("explainButton"));
   try {
     const data = await request("/api/explain", { text });
-    explainDraftText = text;
+    setDraftForPanel("explainPanel", text);
     state.explainSessionId = data.session_id;
     addHistory("读懂它", text, state.explainSessionId, data);
     $("sessionStatus").textContent = `读懂会话 ${state.explainSessionId.slice(0, 8)}`;
     $("conceptName").textContent = data.concept?.name || "分析结果";
     $("explainUserMessage").textContent = text;
     renderCoreAnswer(data.explanation || "暂时没有生成解释。");
-    renderProfile(data.logic_profile);
+    renderLogicProfile(data.logic_profile);
     document.querySelector("#explainPanel > .input-area").hidden = true;
     $("explainResult").hidden = false;
     $("historyBackButton").hidden = false; $("historyMemory").classList.add("has-result-back");
@@ -584,9 +600,9 @@ async function discover() {
       return;
     }
     state.discoverSessionId = data.session_id;
-    discoverDraftText = text;
+    setDraftForPanel("discoverPanel", text);
     addHistory("跨学科理解", text, state.discoverSessionId, data);
-    discoverDraftText = ""; $("discoverText").value = "";
+    clearDraftForPanel("discoverPanel");
     $("sessionStatus").textContent = `发现会话 ${state.discoverSessionId.slice(0, 8)}`;
     $("discoverTitle").textContent = `发现同源 · ${data.concept?.name || text.slice(0, 30)}`;
     renderRichText($("discoverReport"), data.report || "同源分析已完成。");
@@ -623,7 +639,7 @@ function saveHistory(items) { localStorage.setItem(storageKeys.explainHistory, J
 function historyType() { return state.activeKnowledgePanel === "discoverPanel" ? "跨学科理解" : "读懂它"; }
 function addHistory(type, input, sessionId, fullResponse = null) { if (!sessionId) return; const items = getHistory().filter((item) => item.sessionId !== sessionId); items.unshift({ id: makeId("history"), type, input, sessionId, timestamp: new Date().toISOString(), fullResponse }); saveHistory(items); renderHistoryMemory(); }
 function renderHistoryMemory() { const box = $("historyMemoryList"); if (!box) return; box.replaceChildren(); const type = historyType(); const items = getHistory().filter((item) => item.type === type).slice(0, 5); if (!items.length) { box.textContent = "暂无历史记忆，去探索第一个概念吧～"; return; } items.forEach((item) => { const row = document.createElement("button"); row.type = "button"; row.className = `history-memory-item ${type === "读懂它" ? "explain" : "discover"}`; row.textContent = `[${type}] ${String(item.input).slice(0, 34)} · ${new Date(item.timestamp).toLocaleDateString("zh-CN")}`; row.addEventListener("click", () => restoreHistory(item)); box.append(row); }); }
-function restoreHistory(item) { closeHistory(); const discover = item.type === "跨学科理解"; state.activeKnowledgePanel = discover ? "discoverPanel" : "explainPanel"; showKnowledgeLauncher(state.activeKnowledgePanel); revealKnowledgeEditor(); const panel = $(state.activeKnowledgePanel); const inputArea = panel?.querySelector(".input-area"); if (inputArea) inputArea.hidden = true; if (discover) { state.discoverSessionId = item.sessionId; discoverDraftText = item.input; $("discoverText").value = item.input; $("sessionStatus").textContent = `发现会话 ${(item.sessionId || "").slice(0, 8)}`; if (item.fullResponse) { const response = item.fullResponse; $("discoverTitle").textContent = `发现同源 · ${response.concept?.name || item.input}`; renderRichText($("discoverReport"), response.report || "同源分析已完成。"); renderCandidates(response); $("discoverResult").hidden = false; } else { $("discoverResult").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } else { state.explainSessionId = item.sessionId; explainDraftText = item.input; $("explainText").value = item.input; $("sessionStatus").textContent = `读懂会话 ${(item.sessionId || "").slice(0, 8)}`; state.explainConversation = []; $("conversation").replaceChildren(); if (item.fullResponse) { const response = item.fullResponse; $("conceptName").textContent = response.concept?.name || "分析结果"; $("explainUserMessage").textContent = item.input; renderCoreAnswer(response.explanation || ""); renderProfile(response.logic_profile); (response.conversation || []).forEach((message) => addMessage(message.role, message.content)); $("explainResult").hidden = false; $("followUp").hidden = false; } else { $("explainResult").hidden = true; $("followUp").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } window.scrollTo({ top: 0, behavior: "smooth" }); }
+function restoreHistory(item) { closeHistory(); const discover = item.type === "跨学科理解"; state.activeKnowledgePanel = discover ? "discoverPanel" : "explainPanel"; showKnowledgeLauncher(state.activeKnowledgePanel); revealKnowledgeEditor(); const panel = $(state.activeKnowledgePanel); const inputArea = panel?.querySelector(".input-area"); if (inputArea) inputArea.hidden = true; if (discover) { state.discoverSessionId = item.sessionId; discoverDraftText = item.input; $("discoverText").value = item.input; $("sessionStatus").textContent = `发现会话 ${(item.sessionId || "").slice(0, 8)}`; if (item.fullResponse) { const response = item.fullResponse; $("discoverTitle").textContent = `发现同源 · ${response.concept?.name || item.input}`; renderRichText($("discoverReport"), response.report || "同源分析已完成。"); renderCandidates(response); $("discoverResult").hidden = false; } else { $("discoverResult").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } else { state.explainSessionId = item.sessionId; explainDraftText = item.input; $("explainText").value = item.input; $("sessionStatus").textContent = `读懂会话 ${(item.sessionId || "").slice(0, 8)}`; state.explainConversation = []; $("conversation").replaceChildren(); if (item.fullResponse) { const response = item.fullResponse; $("conceptName").textContent = response.concept?.name || "分析结果"; $("explainUserMessage").textContent = item.input; renderCoreAnswer(response.explanation || ""); renderLogicProfile(response.logic_profile); (response.conversation || []).forEach((message) => addMessage(message.role, message.content)); $("explainResult").hidden = false; $("followUp").hidden = false; } else { $("explainResult").hidden = true; $("followUp").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } window.scrollTo({ top: 0, behavior: "smooth" }); }
 function renderHistory() { const box = $("historyList"); box.replaceChildren(); document.querySelectorAll(".history-filter").forEach((button) => { const active = button.dataset.historyType === historyFilterType; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); }); const items = getHistory().filter((item) => item.type === historyFilterType); if (!items.length) { box.textContent = `暂无${historyFilterType}历史记录`; return; } items.forEach((item) => { const row = document.createElement("article"); row.className = "history-item"; const open = document.createElement("button"); open.className = "history-open"; open.type = "button"; const type = document.createElement("strong"); type.className = "history-type"; type.textContent = `[${item.type}]`; const text = document.createElement("span"); text.className = "history-summary"; text.textContent = String(item.input).slice(0, 80); open.append(type, text); open.addEventListener("click", () => restoreHistory(item)); const remove = document.createElement("button"); remove.type = "button"; remove.className = "history-remove"; remove.textContent = "⋮"; remove.setAttribute("aria-label", "更多操作"); remove.addEventListener("click", (event) => { event.stopPropagation(); pendingHistoryDeleteId = item.id; $("sheetBackdrop").hidden = false; $("historyDeleteConfirm").hidden = false; document.body.classList.add("sheet-open"); }); const time = document.createElement("small"); time.textContent = new Date(item.timestamp).toLocaleString("zh-CN"); row.append(open, remove, time); box.append(row); }); }
 function openHistory() { historyFilterType = historyType(); renderHistory(); $("sheetBackdrop").hidden = false; $("historySheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeHistory() { $("historySheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
@@ -752,18 +768,15 @@ function renderRules() { const levels = [["LV.1 学术萌新","0–99","建立�
 function renderProfile() { const user = getUser(), points = getPoints(), level = getLevelInfo(points), cards = allReviewCards(), first = localStorage.getItem(storageKeys.firstLogin) || new Date().toISOString(); if (!localStorage.getItem(storageKeys.firstLogin)) localStorage.setItem(storageKeys.firstLogin, first); $("profileNickname").textContent = user.nickname; $("profileSignature").textContent = user.signature; $("profileAvatar").src = user.avatarUrl || ""; $("profileAvatar").hidden = !user.avatarUrl; $("avatarFallback").hidden = Boolean(user.avatarUrl); $("levelLabel").textContent = `${level.level} · ${level.title}`; $("rulesLevel").textContent = `${level.level} · ${level.title}`; $("profilePoints").textContent = points; $("rulesPoints").textContent = points; $("levelProgress").style.width = `${level.progressPercent}%`; $("rulesProgress").style.width = `${level.progressPercent}%`; $("levelRemaining").textContent = level.nextMax === null ? "已达到最高等级" : `距离下一级还差 ${level.nextMax - points} 能量`; $("recordMastered").textContent = cards.filter((card) => card.status === "mastered").length; $("recordUnmastered").textContent = cards.filter((card) => card.status === "unmastered").length; $("recordNotes").textContent = getNotes().length; $("recordDays").textContent = Math.max(1, Math.floor((Date.now() - new Date(first)) / 86400000) + 1); }
 
 document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
+$("profileToggle").addEventListener("click", () => { const profile = $("logicProfile"); profile.hidden = !profile.hidden; $("profileToggle").setAttribute("aria-expanded", String(!profile.hidden)); $("profileToggle").textContent = profile.hidden ? "查看逻辑画像 ›" : "收起逻辑画像⌄"; });
 document.querySelectorAll(".example-prompt").forEach((button) => button.addEventListener("click", () => {
-  const target = $(button.dataset.target); target.value = button.textContent.trim(); if (button.dataset.target === "discoverText") discoverDraftText = target.value; else explainDraftText = target.value; target.focus();
+  const panelId = button.dataset.target === "discoverText" ? "discoverPanel" : "explainPanel";
+  setDraftForPanel(panelId, button.textContent.trim()); $(button.dataset.target).focus();
 }));
-$("explainText").addEventListener("input", (event) => { explainDraftText = event.target.value; localStorage.setItem("draft_explain", explainDraftText); });
-$("discoverText").addEventListener("input", (event) => { discoverDraftText = event.target.value; localStorage.setItem("draft_discover", discoverDraftText); });
-$("manualImportText").addEventListener("input", (event) => { if (state.importPanelTarget === "discoverPanel") { discoverDraftText = event.target.value; localStorage.setItem("draft_discover", discoverDraftText); } else { explainDraftText = event.target.value; localStorage.setItem("draft_explain", explainDraftText); } });
+$("explainText").addEventListener("input", (event) => setDraftForPanel("explainPanel", event.target.value));
+$("discoverText").addEventListener("input", (event) => setDraftForPanel("discoverPanel", event.target.value));
+$("manualImportText").addEventListener("input", (event) => setDraftForPanel(state.importPanelTarget, event.target.value));
 
-$("profileToggle").addEventListener("click", () => {
-  const profile = $("logicProfile"); profile.hidden = !profile.hidden;
-  $("profileToggle").setAttribute("aria-expanded", String(!profile.hidden));
-  $("profileToggle").textContent = profile.hidden ? "查看逻辑画像 ›" : "收起逻辑画像⌄";
-});
 $("explainToDiscover").addEventListener("click", () => {
   state.activeKnowledgePanel = "discoverPanel"; state.importPanelTarget = "discoverPanel"; state.importTarget = "discoverText";
   document.querySelectorAll(".tab").forEach((item) => { const active = item.dataset.panel === "discoverPanel"; item.classList.toggle("active", active); item.setAttribute("aria-selected", String(active)); });
