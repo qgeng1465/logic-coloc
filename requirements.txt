@@ -1,0 +1,19 @@
+# Logic-Coloc 运行依赖（版本为本地已验证可跑通的版本）
+# 安装：pip install -r requirements.txt
+
+fastapi==0.138.1
+uvicorn[standard]==0.49.0
+pydantic==2.10.3
+langgraph==1.2.9
+numpy==2.2.6
+scipy==1.18.0
+requests==2.32.3
+
+# 图片 OCR（/api/ocr 接口）。会拖入 onnxruntime，镜像体积和冷启动时间明显变大。
+# 若演示不需要「上传截图识字」这个功能，删掉这一行可以大幅瘦身。
+rapidocr_onnxruntime==1.2.3
+
+# 说明：
+# - matplotlib 只在 make_figures.py / plots.py 里用（离线出图），线上不需要，故意不列。
+# - pytest 只在跑测试时需要，线上不需要，故意不列。
+# - Python 版本建议 3.11（本地开发是 3.13.5，但 onnxruntime/scipy 的 wheel 在 3.11 最全）。

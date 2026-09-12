@@ -1,0 +1,29 @@
+# ⚠️ 绝对不能进镜像：这里存着真实 API Key。
+# 线上环境变量由云托管平台注入，不依赖 .env 文件。
+.env
+.env.*
+!.env.example
+
+# 本地开发产物
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.log
+.claude/
+
+# 用户数据：本机跑出来的笔记/卡片/上传附件，不该带进线上镜像。
+# （容器里 api/__init__.py 的 ensure_storage() 会自动重建这两个目录）
+data/notes.json
+data/cards.json
+uploads/
+
+# 体积大、线上用不到
+docs/
+tests/
+assets/
+
+# 注意：data/corpus/example.jsonl 是 RAG 语料库，必须进镜像，这里故意不排除。
