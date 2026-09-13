@@ -243,7 +243,7 @@
   <section class="bottom-sheet settings-sheet" id="settingsSheet" hidden role="dialog" aria-modal="true" aria-labelledby="settingsSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="settingsSheetTitle">设置</h2><button id="settingsSheetClose" type="button" aria-label="关闭设置">×</button></div>
     <p class="settings-account">当前账号：<strong id="settingsUsername">—</strong></p>
-    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button><button class="sheet-menu-button" id="logoutButton" type="button">退出登录 <span>›</span></button></div>
+    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button><button class="sheet-menu-button" id="bindAccountButton" type="button" hidden>保存我的知识（绑定账号） <span>›</span></button><button class="sheet-menu-button" id="switchAccountButton" type="button"><span id="switchAccountLabel">登录已有账号</span> <span>›</span></button><button class="sheet-menu-button" id="logoutButton" type="button">退出登录 <span>›</span></button></div>
   </section>
   <section class="bottom-sheet about-sheet" id="aboutSheet" hidden role="dialog" aria-modal="true" aria-labelledby="aboutSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="aboutSheetTitle">关于知源</h2><button id="aboutSheetClose" type="button" aria-label="关闭关于知源">×</button></div>
@@ -322,7 +322,7 @@
         <p>登录后，笔记、卡片、复习记录和能量都跟着你的账号走。</p>
       </div>
 
-      <div class="auth-tabs" role="tablist" aria-label="登录或注册">
+      <div class="auth-tabs" id="authTabs" role="tablist" aria-label="登录或注册">
         <button class="auth-tab active" id="authLoginTab" type="button" role="tab" aria-selected="true">登录</button>
         <button class="auth-tab" id="authRegisterTab" type="button" role="tab" aria-selected="false">注册</button>
       </div>
@@ -337,6 +337,8 @@
       </form>
 
       <p class="auth-hint" id="authHint">还没有账号？点上面的「注册」建一个。</p>
+      <!-- 只在「绑定账号」模式下出现：那一层是可选的，必须能退出来。 -->
+      <button class="auth-skip" id="authSkipButton" type="button" hidden>以后再说</button>
     </div>
   </section>
 

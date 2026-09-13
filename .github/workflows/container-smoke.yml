@@ -110,6 +110,53 @@ jobs:
           fi
           echo "OK   无 key 时按预期返回 503 而非崩溃"
 
+      - name: 冒烟：匿名身份（免登录路径 —— 「打开就能用」那条路）
+        run: |
+          base=http://127.0.0.1:8000
+          # 前端首次访问就是静默调这个接口，所以它是「不用登录」的全部依赖。
+          g=$(curl -s -X POST "$base/api/auth/guest")
+          echo "匿名身份响应: $g"
+          token=$(echo "$g" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$token" ]; then
+            detail=$(echo "$g" | tail -c 500 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=匿名身份没建出来::${detail}"
+            exit 1
+          fi
+          echo "OK   拿到了匿名 token"
+
+          # 匿名 token 必须和正式账号一样过得了鉴权闸门（业务路由不为游客特判）。
+          fail=0
+          for path in /api/auth/me /api/user/profile /api/notes; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base$path")
+            if [ "$code" = "200" ]; then echo "OK   $path → $code"
+            else echo "::error title=匿名 token 用不了::$path 期望 200，实际 $code"; fail=1; fi
+          done
+          [ "$fail" = "0" ] || exit 1
+
+          # 「保存我的知识」：绑定用户名密码后 uid 必须不变 —— 变了就等于数据丢了。
+          uid=$(echo "$g" | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])')
+          b=$(curl -s -X POST "$base/api/auth/upgrade" -H "Authorization: Bearer $token" \
+              -H 'Content-Type: application/json' -d '{"username":"guested","password":"guest-pass-123"}')
+          echo "绑定响应: $b"
+          uid2=$(curl -s -X POST "$base/api/auth/login" -H 'Content-Type: application/json' \
+                 -d '{"username":"guested","password":"guest-pass-123"}' \
+                 | python3 -c 'import sys,json;print(json.load(sys.stdin).get("user",{}).get("id",""))' 2>/dev/null || true)
+          if [ -z "$uid2" ] || [ "$uid" != "$uid2" ]; then
+            echo "::error title=绑定后 uid 变了（数据会丢）::绑定前 uid=${uid}，绑定后登录得到的 uid=${uid2}"
+            exit 1
+          fi
+          echo "OK   绑定后仍是同一个账号（uid ${uid}）"
+
+          # 已经是正式账号的不能再绑一次。
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/api/auth/upgrade" \
+                 -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+                 -d '{"username":"另一个名字","password":"guest-pass-123"}')
+          if [ "$code" != "400" ]; then
+            echo "::error title=重复绑定应为 400::实际 $code"
+            exit 1
+          fi
+          echo "OK   重复绑定按预期被拒"
+
       - name: 冒烟：容器内依赖与写入能力
         run: |
           # 这一条是加工作流的主因之一：确认 libGL / glib 之类的系统库没缺 ——

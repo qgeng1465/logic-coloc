@@ -49,3 +49,7 @@ GAMMA_W1  = float(os.environ.get("LC_GAMMA", "0.06"))        # W1 副视角指�
 # 已登录的人也不用重新登。但容器重建会连这个文件一起丢掉，**线上应当由平台注入一个
 # 固定值**，否则每次重新部署所有人都会被踢回登录页。见 docs/部署指南-CloudBase.md。
 SECRET_KEY = os.environ.get("LC_SECRET_KEY", "")
+
+# 匿名（游客）身份上限。前端首次访问会静默建一个，所以这是公开部署下唯一会被陌生人
+# 持续写入的文件，必须封顶 —— 详情与超限后的行为见 auth_store.create_guest。
+MAX_GUESTS = int(os.environ.get("LC_MAX_GUESTS", "2000"))

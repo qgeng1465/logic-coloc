@@ -226,3 +226,122 @@ def test_legacy_files_are_left_in_place(isolated_store) -> None:
     (isolated_store / "notes.json").write_text(json.dumps([{"id": "n1"}]), encoding="utf-8")
     auth_store.register("Alice", "hunter2")
     assert (isolated_store / "notes.json").exists()
+
+
+# --------------------------------------------------------- 匿名（游客）身份
+
+
+def _guests() -> list[dict]:
+    """直接读 users.json 数匿名记录 —— 断言的是「真的落盘了什么」。"""
+    users = json.loads((user_paths.DATA_DIR / "users.json").read_text(encoding="utf-8"))
+    return [item for item in users if item.get(auth_store.GUEST_FLAG)]
+
+
+def test_guest_is_a_fully_usable_identity() -> None:
+    """游客拿到的和正式账号是同一等公民：有效 uid、可验证的 token、能查得到。"""
+    guest = auth_store.create_guest()
+    assert user_paths.is_valid_user_id(guest["id"])
+    assert guest[auth_store.GUEST_FLAG] is True
+    # 一人一份独立目录（数据隔离和正式账号走的是同一条路径）。
+    assert user_paths.user_dir(guest["id"]).is_dir()
+
+    token = auth_store.issue_token(guest["id"])
+    assert auth_store.verify_token(token) == guest["id"]
+    assert auth_store.get_user(guest["id"])["id"] == guest["id"]
+
+
+def test_guest_projection_only_adds_the_guest_flag() -> None:
+    guest = auth_store.create_guest()
+    assert set(guest) == {"id", "username", "createdAt", auth_store.GUEST_FLAG}
+    assert "salt" not in guest and "passwordHash" not in guest
+
+
+def test_guest_cannot_be_logged_into() -> None:
+    """匿名身份没有密码，任何输入都必须登不进去 —— 包括它自己的显示名。"""
+    guest = auth_store.create_guest()
+    for name in (guest["username"], f"guest:{guest['id']}", "游客"):
+        assert auth_store.authenticate(name, "") is None, name
+        assert auth_store.authenticate(name, "hunter2") is None, name
+        assert auth_store.authenticate(name, "whatever") is None, name
+
+
+def test_bind_credentials_keeps_the_same_uid_and_data() -> None:
+    """绑定的核心承诺：uid 不变，所以已经攒下的数据一个都不丢。"""
+    guest = auth_store.create_guest()
+    auth_store.add_points(guest["id"], 30, reason="测试")
+
+    bound = auth_store.bind_credentials(guest["id"], "Alice", "hunter2")
+    assert bound["id"] == guest["id"], "uid 必须不变"
+    assert bound["username"] == "Alice"
+    assert auth_store.GUEST_FLAG not in bound, "绑定后就不再是匿名身份了"
+    assert auth_store.load_profile(guest["id"])["points"] == 30, "数据必须还在"
+
+    assert auth_store.authenticate("Alice", "hunter2")["id"] == guest["id"]
+    assert auth_store.authenticate("alice", "hunter2")["id"] == guest["id"], "用户名大小写不敏感"
+
+
+def test_bind_credentials_rejects_bad_input() -> None:
+    guest = auth_store.create_guest()
+    other = auth_store.create_guest()
+
+    with pytest.raises(ValueError):
+        auth_store.bind_credentials(guest["id"], "a", "hunter2")          # 用户名太短
+    with pytest.raises(ValueError):
+        auth_store.bind_credentials(guest["id"], "Alice", "12345")        # 密码太短
+
+    auth_store.register("Taken", "hunter2")
+    with pytest.raises(auth_store.UsernameTakenError):
+        auth_store.bind_credentials(guest["id"], "taken", "hunter2")      # 重名（大小写不敏感）
+    # 失败不能留下半个账号：这个游客应该还是匿名的。
+    assert auth_store.get_user(guest["id"])[auth_store.GUEST_FLAG] is True
+    assert auth_store.get_user(other["id"])[auth_store.GUEST_FLAG] is True
+
+
+def test_bind_credentials_is_rejected_on_a_real_account() -> None:
+    user = auth_store.register("Alice", "hunter2")
+    with pytest.raises(auth_store.NotAGuestError):
+        auth_store.bind_credentials(user["id"], "Alice2", "hunter2")
+    # 原账号不受影响。
+    assert auth_store.authenticate("Alice", "hunter2")["id"] == user["id"]
+    assert auth_store.authenticate("Alice2", "hunter2") is None
+
+
+def test_guest_count_is_capped_and_evicts_the_oldest(monkeypatch) -> None:
+    """公开部署下这是唯一会被陌生人持续写入的文件，必须封顶。
+
+    超限时淘汰**最早**的匿名记录，且正式账号一个都不能碰。
+    只摘 users.json 里的记录，磁盘上的目录不删（删文件不可逆）。
+    """
+    monkeypatch.setattr(auth_store, "MAX_GUEST_ACCOUNTS", 3)
+    real = auth_store.register("Alice", "hunter2")
+
+    oldest = auth_store.create_guest()
+    for _ in range(2):
+        auth_store.create_guest()
+    assert len(_guests()) == 3
+
+    newest = auth_store.create_guest()          # 第 4 个：挤掉最早那个
+    guests = _guests()
+    assert len(guests) == 3
+    assert all(item["id"] != oldest["id"] for item in guests), "淘汰的应该是最早那条"
+    assert any(item["id"] == newest["id"] for item in guests)
+
+    # 被淘汰的 token 立刻失效（get_user 查不到），目录仍留在磁盘上。
+    assert auth_store.get_user(oldest["id"]) is None
+    assert auth_store.verify_token(auth_store.issue_token(oldest["id"])) == oldest["id"], "签名本身还有效"
+    assert user_paths.user_dir(oldest["id"]).is_dir(), "只摘记录，不删文件"
+
+    # 正式账号毫发无伤。
+    assert auth_store.authenticate("Alice", "hunter2")["id"] == real["id"]
+
+
+def test_guests_do_not_jump_the_legacy_data_queue(isolated_store) -> None:
+    """旧全局数据归「第一个正式注册的账号」，不能被先建出来的游客截胡。"""
+    (isolated_store / "notes.json").write_text(json.dumps([{"id": "n1"}], ensure_ascii=False), encoding="utf-8")
+
+    guest = auth_store.create_guest()
+    assert not (user_paths.user_dir(guest["id"]) / "notes.json").exists(), "游客不继承旧数据"
+
+    first = auth_store.register("Alice", "hunter2")
+    adopted = json.loads((user_paths.user_dir(first["id"]) / "notes.json").read_text(encoding="utf-8"))
+    assert adopted == [{"id": "n1"}]

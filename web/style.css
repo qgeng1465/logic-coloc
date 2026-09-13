@@ -449,6 +449,9 @@ select { width: 100%; height: 44px; border: 1px solid var(--line-strong); border
 .auth-submit { width: 100%; min-height: 46px; margin-top: 20px; font-size: 15px; }
 .auth-submit[disabled] { opacity: .55; }
 .auth-hint { margin: 16px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
+/* 「以后再说」。只在绑定模式下渲染（别的模式 [hidden] 挡掉）——绑定是可选的，
+   必须留一个体面的出口，不能让人以为不填就进不去。 */
+.auth-skip { display: block; width: 100%; min-height: 40px; margin-top: 10px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
 /* 登录页盖住整个应用时锁住底层滚动：它下面的 .app-shell 虽然没渲染数据，
    但静态内容仍在，不锁的话手机上能在登录页背后推动底下的页面。 */
 body.auth-open { overflow: hidden; }

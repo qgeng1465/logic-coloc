@@ -53,7 +53,8 @@ Windows 控制台默认 GBK，中文/emoji 输出会乱码，跑 Python 前置 `
 web/         单页前端。index.html 用绝对路径 /static/* 引资源
   └─ app.js  无框架，约 1400 行。两个「功能面板」(explainPanel / discoverPanel) +
              五个「应用页」(cardsPage / notesPage / reviewPage / petPage …) 两套切换机制。
-             所有请求走 authFetch()（补 Authorization 头 + 401 统一踢回登录页）
+             所有请求走 authFetch()（补 Authorization 头 + 401 统一处理：正式账号踢回
+             登录页，游客则自动重建一个匿名身份，见 api/auth_store.py 的模块说明）
 api/         HTTP 层
   ├─ __init__.py  app 装配：CORS 白名单写死 localhost:5500/8080；挂 /static → web/、/uploads
   ├─ routes.py    所有路由        ├─ service.py   LogicColocService：唯一持有 graph/corpus/retriever
@@ -75,14 +76,19 @@ sessions/manager.py  纯内存会话（dict），有上限地暴露 recent_messa
 
 ### 路由表
 
-**除下表标了「匿名」的四个之外，所有路由都挂了 `Depends(current_user)`，未带有效
+**除下表标了「匿名」的六个之外，所有路由都挂了 `Depends(current_user)`，未带有效
 `Authorization: Bearer <token>` 一律 401。** 加新路由时别忘了这个依赖 —— 漏掉就是
 一个匿名可用的数据口子。前端对应的是 `authFetch`，新增请求不要直接调 `fetch`。
+
+`/api/auth/guest` 是唯一一个**会写磁盘的匿名口**（每请求往 `data/users.json` 追加
+一条），所以它单独有 `LC_MAX_GUESTS` 封顶；其余五个纯读或纯静态。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/` | 返回 `web/index.html`（**匿名**） |
 | GET | `/api/health` | 对 `config.BRIDGE` 做 1.5s TCP 探测；不通返回 `code:503`（**匿名**，平台探活用） |
+| POST | `/api/auth/guest` | **匿名**。建一个免注册的匿名身份 → `{token, user}`，user 带 `guest: true`。前端首访静默调它，所以登录页不再是必经之路；超 `LC_MAX_GUESTS` 时淘汰最早的匿名记录 |
+| POST | `/api/auth/upgrade` | 给匿名身份补用户名密码 → `{token, user}`。**uid 不变**，数据不丢。已经是正式账号 400、重名 409、格式不合规 422 |
 | POST | `/api/auth/register` | → `{token, user}`；重名 409、格式不合规 422 |
 | POST | `/api/auth/login` | → `{token, user}`；用户名或密码错都是 401 |
 | GET | `/api/auth/me` | 校验 token + 回 `{user, profile}`，前端启动时用它决定进不进应用 |
@@ -104,7 +110,7 @@ sessions/manager.py  纯内存会话（dict），有上限地暴露 recent_messa
 StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
 `from .user_paths import UPLOAD_DIR`），运行期改 `user_paths.UPLOAD_DIR` 不会影响它。
 
-### 账号体系的三个刻意决定（别"顺手改回去"）
+### 账号体系的四个刻意决定（别"顺手改回去"）
 
 1. **密码哈希只用标准库 PBKDF2-HMAC-SHA256**（`hashlib.pbkdf2_hmac`，每账号随机盐 +
    `hmac.compare_digest`）。`requirements.txt` 里**没有** passlib/bcrypt/argon2，而线上
@@ -122,6 +128,27 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
    这一条是既有 store 测试与离线脚本能零改动继续跑的原因。uid 由服务端
    `uuid4().hex` 生成，`user_paths.is_valid_user_id` 用 `\A[0-9a-f]{32}\Z` 卡死 ——
    **这是唯一一处外部输入直连文件路径的地方**，目录穿越必须在这里就被拦下。
+
+4. **匿名身份是一等公民，不是「没登录」。** `auth_store.create_guest()` 产出的记录和
+   正式账号**共用同一张表、同一种 token、同一套按 uid 分目录的隔离**，差别只有两点：
+   没有密码哈希（带 `guest: True`）、`usernameLower` 带 `guest:` 前缀。因此：
+
+   - 所有业务路由**一行都不用为游客特判**，`Depends(current_user)` 照常工作；
+   - 登录接口永远匹配不到匿名记录（`_USERNAME_RE` 不许出现 `:`），且 `authenticate`
+     里还有一道 `GUEST_FLAG` 显式拦截 —— 它没有密码，绝不能被比中；
+   - `bind_credentials()` 把用户名密码补到**同一个 uid** 上，这就是「保存我的知识 /
+     换台设备继续用」的全部实现：数据一个都不丢。
+
+   **`public_user` 里的 `guest` 键只在是匿名身份时出现**，别改成恒定输出、也别为它
+   去改 `test_public_user_never_exposes_credentials` / `test_register_login_and_me`
+   —— 那两个测试用 `set(user) == {…}` 钉住的是**防凭证字段外泄**的护栏，
+   消费端按「缺省即非匿名」读即可。
+
+   ⚠️ `create_guest` 是唯一会被陌生人反复写入的落盘路径，所以有 `MAX_GUEST_ACCOUNTS`
+   （`LC_MAX_GUESTS`，默认 2000）封顶：超限**只从 `users.json` 里摘掉最早那条记录**，
+   磁盘上的 `data/users/<uid>/` 与 `uploads/<uid>/` 不删（删文件不可逆）。被摘掉的那个
+   token 校验不过，等价于「很久没来的匿名身份过期了」。正式账号永不参与淘汰。
+   同理 `_adopt_legacy_data` 的「第一个账号」只数正式账号，游客不继承旧全局数据。
 
 `_adopt_legacy_data` 让**第一个注册的账号**继承旧的全局 `notes.json`/`cards.json`/
 `review_records.json`（只读不删，判断失误时还能人工抢救）。线上镜像里那三个文件被
@@ -176,7 +203,7 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
 
 ## LLM 接入与配置
 
-所有默认参数集中在 `config.py`，**全部可用 `LC_*` 环境变量覆盖**：`LC_BRIDGE`、`LC_MODEL`、`LC_API_KEY`、`LC_TIMEOUT`、`LC_THINKING`、`LC_SAMPLES`、`LC_METHOD`、`LC_THRESHOLD`、`LC_GAMMA`、`LC_CJK_FONT`。
+所有默认参数集中在 `config.py`，**全部可用 `LC_*` 环境变量覆盖**：`LC_BRIDGE`、`LC_MODEL`、`LC_API_KEY`、`LC_TIMEOUT`、`LC_THINKING`、`LC_SAMPLES`、`LC_METHOD`、`LC_THRESHOLD`、`LC_GAMMA`、`LC_CJK_FONT`、`LC_MAX_GUESTS`。
 
 `config._load_dotenv()` 在 import 时执行，依次找 `<包目录>/.env` 和 `<父目录>/.env`，**只填 `os.environ` 里还没有的键**——所以平台注入的环境变量永远优先于 `.env` 文件。
 

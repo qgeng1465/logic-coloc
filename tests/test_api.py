@@ -909,3 +909,109 @@ def test_plain_chat_is_untouched_by_the_attachment_feature(runtime) -> None:
     assert response.json()["attachment_notes"] == []
     assert graph.calls[-1]["user_input"] == "还是不懂"
     assert graph.calls[-1]["stored_input"] is None
+
+
+# =============================== 匿名（游客）身份 ===============================
+
+
+def guest(client) -> dict:
+    """匿名建一个游客身份，返回 `{token, user}`。"""
+    response = client.post("/api/auth/guest")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_guest_endpoint_stays_anonymous(runtime) -> None:
+    """免注册身份的意义就是「不用先登录」，所以它自己当然不能被登录挡住。"""
+    client = anonymous(runtime[0])
+    payload = guest(client)
+    assert payload["user"]["guest"] is True
+    assert payload["user"]["username"], "得有个能显示的称呼"
+    assert "salt" not in payload["user"] and "passwordHash" not in payload["user"]
+
+    # 拿到的 token 和正式账号同源：受保护的路由一视同仁地放行。
+    client.headers["Authorization"] = f"Bearer {payload['token']}"
+    for path in ("/api/auth/me", "/api/user/profile", "/api/notes", "/api/reviews", "/api/cards/due"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_two_guests_are_different_accounts(runtime) -> None:
+    """每个游客一个 uid，互不可见 —— 数据隔离这一层对匿名身份同样生效。"""
+    client = anonymous(runtime[0])
+    first = guest(client)
+    second = guest(client)
+    assert first["user"]["id"] != second["user"]["id"]
+
+    client.headers["Authorization"] = f"Bearer {first['token']}"
+    assert client.post("/api/user/points", json={"delta": 30, "reason": "test"}).status_code == 200
+
+    client.headers["Authorization"] = f"Bearer {second['token']}"
+    assert client.get("/api/auth/me").json()["profile"]["points"] == 0, "看不到别人的数据"
+
+
+def test_guest_keeps_its_data_after_binding_an_account(runtime) -> None:
+    """绑定的全部意义：uid 不变，所以攒下的数据一个都不丢。
+
+    「换台设备继续用」就落在这一步 —— 绑定之后必须能用用户名密码登回**同一个**账号。
+    """
+    client = anonymous(runtime[0])
+    created = guest(client)
+    client.headers["Authorization"] = f"Bearer {created['token']}"
+    assert client.post("/api/user/points", json={"delta": 30, "reason": "test"}).status_code == 200
+
+    bound = client.post("/api/auth/upgrade", json={"username": "绑定后的我", "password": "hunter2"})
+    assert bound.status_code == 200, bound.text
+    assert bound.json()["user"]["id"] == created["user"]["id"], "uid 必须不变"
+    assert "guest" not in bound.json()["user"], "绑定后不再是匿名身份"
+
+    # 换一个干净客户端、走真正的登录接口 —— 模拟「另一台设备」。
+    fresh = anonymous(runtime[0])
+    logged_in = fresh.post("/api/auth/login", json={"username": "绑定后的我", "password": "hunter2"})
+    assert logged_in.status_code == 200
+    assert logged_in.json()["user"]["id"] == created["user"]["id"]
+
+    fresh.headers["Authorization"] = f"Bearer {logged_in.json()['token']}"
+    assert fresh.get("/api/auth/me").json()["profile"]["points"] == 30, "数据必须跟着账号"
+
+
+def test_guest_display_name_is_not_a_login(runtime) -> None:
+    """游客的显示名不是凭证：拿它配任何密码都登不进去。"""
+    client = anonymous(runtime[0])
+    created = guest(client)
+    name = created["user"]["username"]
+    assert client.post("/api/auth/login", json={"username": name, "password": ""}).status_code == 401
+    assert client.post("/api/auth/login", json={"username": name, "password": "hunter2"}).status_code == 401
+
+
+def test_upgrade_requires_a_token_and_reports_failures(runtime) -> None:
+    client = anonymous(runtime[0])
+    # 没登录当然不能认领任何身份。
+    assert client.post("/api/auth/upgrade", json={"username": "x", "password": "hunter2"}).status_code == 401
+
+    # 格式不合规 → 422。
+    client.headers["Authorization"] = f"Bearer {guest(client)['token']}"
+    assert client.post("/api/auth/upgrade", json={"username": "a", "password": "hunter2"}).status_code == 422
+    assert client.post("/api/auth/upgrade", json={"username": "合法名字", "password": "123"}).status_code == 422
+
+    # 撞上已注册的用户名 → 409。注意得用一个**游客**去撞：正式账号连第二步都到不了。
+    register(client, "already-here")
+    client.headers["Authorization"] = f"Bearer {guest(client)['token']}"
+    assert client.post("/api/auth/upgrade", json={"username": "Already-Here", "password": "hunter2"}).status_code == 409
+
+    # 已经是正式账号的，不能再绑一次 → 400（先于重名判断：它根本没有可绑的匿名身份）。
+    client.headers["Authorization"] = f"Bearer {register(client, '已正式')}"
+    assert client.post("/api/auth/upgrade", json={"username": "另一个", "password": "hunter2"}).status_code == 400
+
+
+def test_real_account_projection_has_no_guest_key(runtime) -> None:
+    """`guest` 只在是匿名身份时出现 —— 正式账号的投影保持原来那三个键。
+
+    `public_user` 的注释里说明了为什么不做成恒定输出：这形状是两个测试钉住的
+    凭证外泄护栏，不该为了一个布尔值去改。
+    """
+    client = anonymous(runtime[0])
+    token = register(client, "普通人")
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert set(me.json()["user"]) == {"id", "username", "createdAt"}
+    assert not me.json()["user"].get("guest")

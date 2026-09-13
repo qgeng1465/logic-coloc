@@ -92,6 +92,40 @@ def register_route(payload: CredentialsPayload) -> dict:
     return {"code": 0, "token": auth_store.issue_token(user["id"]), "user": user}
 
 
+@router.post("/auth/guest")
+def guest_route() -> dict:
+    """免注册的匿名身份：浏览器首次访问时静默调它，直接拿到一份可用的登录态。
+
+    **这是本路由表里第 5 个匿名口**（其余三个见 CLAUDE.md 的路由表），故意的 ——
+    把登录从「必经之路」变成「可选项」正是它存在的意义。签发的 token 与注册账号
+    完全同源，后续所有接口一视同仁，数据同样隔离在 `data/users/<uid>/`。
+
+    滥用面：每个请求都会往 `data/users.json` 追加一条记录，所以由
+    `config.MAX_GUESTS` 封顶（超限淘汰最早的匿名记录，见 auth_store.create_guest）。
+    """
+    user = auth_store.create_guest()
+    return {"code": 0, "token": auth_store.issue_token(user["id"]), "user": user}
+
+
+@router.post("/auth/upgrade")
+def upgrade_route(payload: CredentialsPayload, user: dict = Depends(current_user)) -> dict:
+    """给匿名身份补一个用户名密码 —— 「保存我的知识 / 换台设备继续用」时才需要。
+
+    uid 不变，所以已经攒下的笔记、卡片、能量一个都不会丢。返回的 token 只是给前端
+    一个和登录一致的形状；旧 token 依然有效（无状态签名，服务端没有可吊销的表）。
+    """
+    try:
+        bound = auth_store.bind_credentials(user["id"], payload.username, payload.password)
+    except auth_store.UsernameTakenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except auth_store.NotAGuestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        # 用户名/密码格式不合规：请求本身的问题，422 而不是 500。
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"code": 0, "token": auth_store.issue_token(bound["id"]), "user": bound}
+
+
 @router.post("/auth/login")
 def login_route(payload: CredentialsPayload) -> dict:
     user = auth_store.authenticate(payload.username, payload.password)

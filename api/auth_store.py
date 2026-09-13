@@ -16,6 +16,13 @@
 凭证与资料**分两个文件**：`data/users.json` 只放账号与 hash，
 `data/users/<uid>/profile.json` 只放昵称/签名/头像/能量。分开是为了不会哪天顺手把
 整个 user 记录（连带 hash）返回给前端。
+
+3. **匿名（游客）身份是一等公民，不是「没登录」。** `create_guest()` 产出的记录和
+   正式账号共用同一张表、同一种 token、同一套按 uid 分目录的数据隔离 —— 区别只有两点：
+   它没有密码哈希（`guest: True` 标记），以及它的 `usernameLower` 带 `guest:` 前缀，
+   登录接口永远匹配不到。这样「打开就能用」和「数据是账号的」两件事可以同时成立：
+   之后 `bind_credentials()` 把用户名密码补到**同一个 uid** 上，攒下的数据一个不丢。
+   前端只在拿不到匿名身份时才回退到登录页。
 """
 from __future__ import annotations
 
@@ -37,6 +44,10 @@ class UsernameTakenError(ValueError):
     """用户名已被注册。路由层转 409。"""
 
 
+class NotAGuestError(ValueError):
+    """该账号已经绑定过用户名密码，不能重复绑定。路由层转 400。"""
+
+
 # 用户名：2-20 位中英文、数字、下划线、短横线。密码只限长度，不做复杂度要求
 # ——这是个学习工具，不是网银，逼用户大小写符号混排只会让人把密码写在便签上。
 # 汉字范围用 一-鿿（CJK 统一汉字区全段），别写成「一-龥」—— 龥 是
@@ -50,6 +61,18 @@ _ITERATIONS = 200_000
 # 30 天。前端把 token 存在 localStorage，过期后重新登录。
 TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 SALT_BYTES = 16
+
+# 匿名身份相关。见模块 docstring 第 3 条。
+GUEST_FLAG = "guest"
+# 匿名记录的 usernameLower 一律带这个前缀。`_USERNAME_RE` 不许出现 `:`，所以任何
+# 能注册出来的用户名都不会撞上它 —— 登录接口的按 key 查表天然查不到匿名记录。
+_GUEST_LOGIN_PREFIX = "guest:"
+# 匿名身份上限。公开部署下每个首次访问的浏览器都会建一条，这是 users.json 唯一会被
+# 陌生人持续写入的来源，必须封顶。超限时**淘汰最早建的那条记录**（只从 users.json 里
+# 摘掉，磁盘上的 data/users/<uid>/ 与 uploads/<uid>/ 不删）—— 那个 token 从此校验不过，
+# 等价于「很久没来过的匿名身份过期了」。正式账号永远不参与淘汰。
+# ⚠️ 它必须是模块级常量（而不是每次读 config.MAX_GUESTS）：测试要能只改这一处。
+MAX_GUEST_ACCOUNTS = config.MAX_GUESTS
 
 DEFAULT_PROFILE: dict = {
     "nickname": "学术萌新",
@@ -105,12 +128,23 @@ def _hash_password(password: str, salt: bytes, iterations: int) -> str:
 
 
 def public_user(record: dict) -> dict:
-    """对外投影：**绝不带 salt / passwordHash**。"""
-    return {
+    """对外投影：**绝不带 salt / passwordHash**。
+
+    `guest` 键**只在是匿名身份时出现**。这一点是刻意的，别改成恒定输出：正式账号的
+    投影就是「id / username / createdAt」三个键，两个既有测试
+    （test_auth_store.test_public_user_never_exposes_credentials 与
+    test_api.test_register_login_and_me）用 `set(user) == {...}` 钉住了这个形状，
+    那是防凭证字段外泄的护栏 —— 为了多一个布尔值去改它不划算。
+    消费端一律按「缺省即非匿名」读（`user.get("guest")`、JS 里 `!!user.guest`）。
+    """
+    projection = {
         "id": str(record.get("id") or ""),
         "username": str(record.get("username") or ""),
         "createdAt": str(record.get("createdAt") or ""),
     }
+    if record.get(GUEST_FLAG):
+        projection[GUEST_FLAG] = True
+    return projection
 
 
 def validate_credentials(username: str, password: str) -> tuple[str, str]:
@@ -145,11 +179,80 @@ def register(username: str, password: str) -> dict:
             raise UsernameTakenError("该用户名已被注册")
         users.append(record)
         _write_users_unlocked(users)
-        is_first_account = len(users) == 1
+        # 「第一个账号」只数正式账号：匿名身份可能先被建出来（前端首访就建），
+        # 那不该把旧全局数据交给一个随时会过期的游客。
+        is_first_account = len([item for item in users if not item.get(GUEST_FLAG)]) == 1
 
     user_paths.ensure_user_storage(record["id"])
     if is_first_account:
         _adopt_legacy_data(record["id"])
+    return public_user(record)
+
+
+def create_guest() -> dict:
+    """建一个**免注册的匿名身份**并落盘，返回对外投影。
+
+    和 `register()` 的差别只有：没有密码（`passwordHash`/`salt` 为空串）、带
+    `guest: True` 标记、不继承旧全局数据（游客是临时的，不该接手本地开发数据）。
+    其余一切照旧 —— 同一个 uid 命名空间、同一套 `data/users/<uid>/` 隔离、同一种 token，
+    所以前端「打开就能用」而所有接口一行都不用为游客特殊处理。
+
+    要变成正式账号就调 `bind_credentials()`，uid 不变，数据不丢。
+    """
+    user_id = uuid4().hex
+    record = {
+        "id": user_id,
+        "username": f"游客{user_id[:6]}",
+        "usernameLower": f"{_GUEST_LOGIN_PREFIX}{user_id}",
+        "salt": "",
+        "passwordHash": "",
+        "iterations": _ITERATIONS,
+        "createdAt": _iso(utc_now()),
+        GUEST_FLAG: True,
+    }
+    with _accounts_lock:
+        users = _read_users_unlocked()
+        guests = [item for item in users if item.get(GUEST_FLAG)]
+        if len(guests) >= MAX_GUEST_ACCOUNTS:
+            # users 是按建立顺序追加的，第一个 guest 就是最早的。只摘记录，不动磁盘：
+            # 删文件是不可逆的，而这次淘汰本来就是「很久没来的匿名身份过期了」。
+            evicted = str(guests[0].get("id") or "")
+            users = [item for item in users if str(item.get("id") or "") != evicted]
+        users.append(record)
+        _write_users_unlocked(users)
+
+    user_paths.ensure_user_storage(user_id)
+    return public_user(record)
+
+
+def bind_credentials(user_id: str, username: str, password: str) -> dict:
+    """给一个匿名身份补上用户名密码，**uid 不变**（所以数据一个都不丢）。
+
+    抛 `NotAGuestError`（已经是正式账号）、`UsernameTakenError`（重名）、
+    `ValueError`（格式不合规），路由层分别转 400 / 409 / 422。
+    """
+    username, password = validate_credentials(username, password)
+    key = username.casefold()
+    salt = secrets.token_bytes(SALT_BYTES)
+    with _accounts_lock:
+        users = _read_users_unlocked()
+        record = next((item for item in users if str(item.get("id") or "") == user_id), None)
+        if record is None:
+            raise ValueError("账号不存在")
+        if not record.get(GUEST_FLAG):
+            raise NotAGuestError("这个账号已经绑定过用户名和密码了")
+        if any(str(item.get("usernameLower")) == key for item in users):
+            raise UsernameTakenError("该用户名已被注册")
+        record.update({
+            "username": username,
+            "usernameLower": key,
+            "salt": salt.hex(),
+            "passwordHash": _hash_password(password, salt, _ITERATIONS),
+            "iterations": _ITERATIONS,
+            "boundAt": _iso(utc_now()),
+        })
+        record.pop(GUEST_FLAG, None)
+        _write_users_unlocked(users)
     return public_user(record)
 
 
@@ -159,6 +262,10 @@ def authenticate(username: str, password: str) -> dict | None:
     with _accounts_lock:
         users = _read_users_unlocked()
     record = next((item for item in users if str(item.get("usernameLower")) == key), None)
+    if record is not None and record.get(GUEST_FLAG):
+        # 匿名记录没有密码哈希，正常输入（不含 `:`）也匹配不到它。这里再挡一次是
+        # 防御性的：把「falsy 的 passwordHash 恰好被比中」这件事从可能变成不可能。
+        record = None
     if record is None:
         # 用户名不存在时也付一次同等的哈希代价：否则响应时间直接暴露「这个账号存不存在」，
         # 等于免费送人一个用户名枚举接口。
