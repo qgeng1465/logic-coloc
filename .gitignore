@@ -10,6 +10,8 @@ venv/
 *.log
 .DS_Store
 Thumbs.db
+# Word/WPS 打开文档时留的锁文件（~$xxx.docx），不是内容
+~$*
 
 # Local H5 note data and user uploads
 data/notes.json
@@ -23,3 +25,9 @@ uploads/
 data/users.json
 data/users/
 data/.secret_key
+
+# CLI 演示缓存与出图（precompute / make_figures 生成）——本机产物，不进库。
+# ⚠️ 这两条必须带前导斜杠（锚定到仓库根）：写成 assets/ 会把前端的 web/assets/
+# 站点图标一起忽略掉，那目录是要进镜像的。
+/data/demo_cache.json
+/assets/

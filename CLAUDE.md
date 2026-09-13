@@ -13,7 +13,11 @@ Logic-Coloc「跨学科知识同源翻译机」：判断两段不同领域的文
 
 ## 目录性质与运行方式
 
-**本目录就是 `logic_coloc` 包本身**（模块间用相对导入 `from . import …`），不是独立项目根。设计上它作为子包放在某个项目根下，运行输出（`data/demo_cache.json`、`assets/*.png`）写到**包目录的两级父目录**，即 `E:\data`、`E:\assets`——代码里 `ROOT` 就是这个父目录。修改缓存/输出路径前先确认这点。
+**本目录就是 `logic_coloc` 包本身**（模块间用相对导入 `from . import …`），不是独立项目根。
+
+**所有运行产出都落在包目录里面**：Web 端数据在 `logic_coloc/data/`（账号、笔记、卡片）与 `logic_coloc/uploads/`；CLI 演示的缓存在 `logic_coloc/data/demo_cache.json`、出图在 `logic_coloc/assets/`。**不要在包的上一级目录再建 `data/` 或 `assets/`** —— 2026-09-13 之前 `cache.py` / `precompute.py` / `make_figures.py` 取的是包的**上一级**目录（本机是 `E:\`，用户整个个人盘，里面还堆着论文、毕设），结果每跑一次 CLI 就在人家的盘根凭空多出一个 `data/`，还和 Web 端真正的 `logic_coloc/data/` 名字就差一层、极易删错。已改成取包目录本身。
+
+三处路径常量是唯一的定义点，动它们之前先看这里：`cache.py` 的 `_DEFAULT_PATH`、`precompute.py` 与 `make_figures.py` 的 `ASSETS`。
 
 包入口只能以 `python -m logic_coloc.<模块>` 执行，且必须把父目录 `E:\` 放到 sys.path（在 `E:\` 下运行，或设 `PYTHONPATH=E:\`）。直接在 `E:\logic_coloc` 内 `python -m` 或直接运行单个 `.py` 文件都会因找不到包/相对导入而失败。
 

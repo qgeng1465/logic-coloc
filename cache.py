@@ -10,8 +10,12 @@ import hashlib
 import json
 import os
 
+# 缓存写**包目录自己的** data/，不再写到包的上一级目录。
+# 上一级通常是用户的项目根（本机是 E:\，里面还有论文/毕设一堆无关文件夹），我们的代码
+# 往那儿掉一个 data/ 很碍眼，也容易和 Web 端真正的数据目录搞混。
+# 这里落盘的是 CLI 演示缓存，与 Web 端 data/users.json 之类同处一个 data/ 但互不相干。
 _DEFAULT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "demo_cache.json"
+    os.path.dirname(os.path.abspath(__file__)), "data", "demo_cache.json"
 )
 
 

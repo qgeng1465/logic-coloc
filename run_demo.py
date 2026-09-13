@@ -9,7 +9,6 @@
 """
 import argparse
 import json
-import os
 import sys
 
 from . import config
@@ -19,8 +18,6 @@ from .feature_extractor import DIMS, extract_features
 from .homonomy import homonomy_score
 from .mapper import map_entities
 from .plots import render_radar
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def resolve(args):

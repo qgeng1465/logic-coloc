@@ -16,8 +16,9 @@ from .homonomy import homonomy_score
 from .mapper import map_entities
 from .plots import render_radar
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ASSETS = os.path.join(ROOT, "assets")
+# 出图落在**包目录自己的** assets/（与 Web 端的 web/assets/ 图标是两个目录，别混）。
+# 早先取的是包的上一级目录，会在用户的项目根凭空多出一个 assets/，2026-09-13 改到包内。
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 
 def main():
