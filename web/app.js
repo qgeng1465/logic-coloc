@@ -881,7 +881,7 @@ async function discover() {
       for (;;) {
         await new Promise(resolve => setTimeout(resolve, 1200));
         if (controller.signal.aborted) throw new DOMException("分析已取消", "AbortError");
-        const progress = await request(`/api/discover/${encodeURIComponent(data.task_id)}`);
+        const progress = await request(`/api/discover/${encodeURIComponent(data.task_id)}`, null, { method: "GET" });
         if (progress.done) { data = progress.result; break; }
         setLoading(true, progress.status === "running" ? "正在分析，请稍候…" : "正在排队…", $("discoverButton"));
       }
