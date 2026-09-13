@@ -6,6 +6,16 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
+# OpenCV 需要的系统库。python:slim 里没有，缺了会在 import cv2 时报
+# `ImportError: libGL.so.1: cannot open shared object file`。
+# 只在跑 OCR 时才触发（/api/ocr 与复盘时的图片附件），所以症状是「应用活着、
+# 但传图片必失败」——不容易第一时间联想到缺系统库，必须在这里装上。
+# 来源：rapidocr_onnxruntime 声明依赖 opencv-python（非 headless 版，链 libGL）。
+# 若将来仍报缺库，按报错名补 apt 包（常见还有 libsm6 / libxext6 / libxrender1）。
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # 依赖单独一层：以后只改业务代码时不会重装依赖，构建快很多。
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
