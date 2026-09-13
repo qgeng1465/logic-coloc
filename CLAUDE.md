@@ -24,7 +24,7 @@ cd /e          # 必须在包的父目录下运行，下同
 python -m uvicorn logic_coloc.api:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='*'
 # 浏览器开 http://127.0.0.1:8000/
 
-# ---- 测试（154 个，全部离线、不碰网络）----
+# ---- 测试（245 个，全部离线、不碰网络）----
 python -m pytest logic_coloc/tests/ -q
 python -m pytest logic_coloc/tests/test_api.py -q                       # 单文件
 python -m pytest logic_coloc/tests/test_api.py::test_ocr_returns_text   # 单用例
@@ -222,11 +222,21 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
 
 ## 测试
 
-`tests/` 下 154 个用例（其中 2 个是既存失败，见下），**全部离线**——不碰网络、不打真实 LLM。每个测试文件顶部自己 `sys.path.insert(0, parents[2])` 把 `E:\` 塞进 path，所以在哪运行都能 import 到包。
+`tests/` 下 245 个用例，**全部通过（0 failed）**，**全部离线**——不碰网络、不打真实 LLM。每个测试文件顶部自己 `sys.path.insert(0, parents[2])` 把 `E:\` 塞进 path，所以在哪运行都能 import 到包。
 
 `tests/test_api.py` 用 `FakeGraph` 替掉真实 graph（`LogicColocService(graph=...)` 支持注入）。落盘路径现在由 `user_root` fixture **统一**重定向到 `tmp_path`（它同时 patch `user_paths.DATA_DIR/USERS_DIR/UPLOAD_DIR` 与三个 store 的文件常量，并注册一个 `tester` 账号），`runtime` 依赖它、把 token 塞进 `client.headers`——所以绝大多数用例是匿名时代写的、现在一行没改也照跑。要给某个账号播种数据用 `user_root.seed("notes.json", [...])`，别自己 patch 常量、更别写进真实的 `data/`。
 
-`tests/test_card_store.py` 里有 **2 个既存失败**（`test_mastered_review_uses_ebbinghaus_intervals`、`test_forgot_and_vague_review_schedule`）：它们按「天」断言间隔，而 store 早已按「分钟」计算。**是测试过时，不是实现有 bug**，交付前不要去"修"实现来迎合它们。
+`tests/test_card_store.py` 曾有 **2 个长期失败的用例**（`test_mastered_review_uses_ebbinghaus_intervals`、`test_forgot_and_vague_review_schedule`）：它们按「天」断言间隔，而 store 当时按「分钟」算（5 分钟 / 30 分钟）。**已于 2026-09-13 结清** —— 产品口径定为「今天复习过就算已掌握、以天为粒度」，`EBBINGHAUS_INTERVALS` 改成 1/2/4/7/15 天 + 30/90/180/365 天，那两条用例**一行没改就自己转绿了**（当时的判断「是测试过时、不是实现有 bug」是对的：页面曲线图 x 轴、复习阶段筛选、`scheduleDaysForStage` 三处早就按天写死了）。`test_every_interval_is_a_whole_number_of_days` 现在钉住这条，别再让排期表漂回分钟级。
+
+`tests/test_schedule_curve.py` 守的是学习日志页顶上那张**手写的**艾宾浩斯曲线 SVG：8 个圆点必须与 8 个横坐标一一对应且同 x、标签不互相压字、点落在曲线上，并且横坐标与卡片下方「复习节点：…」那行一字不差。⚠️ **曲线图的 8 个节点（含 5分钟/30分钟/12小时）和筛选栏那 6 个按钮（全部 / 1天 / 2天 / 4天 / 7天 / 15天，`全部` 排最前）不是一回事**：前者是理论曲线，后者是产品真正在用的排期（按天起）。2026-09-13 图上是 7 个点配 5 个坐标、两套 x 还各不相同，才补成现在这样。
+
+`tests/test_schedule_page.py` 是唯一**用 node 跑真 JS** 的用例：它调起 `tests/schedule_page_check.js`，那个脚本按花括号配对从 `web/app.js` 里切出 `schedulePlanDate / renderSchedule / scheduleGroup` 等真函数，配一套假 DOM 跑。
+
+**它守的是「复习计划表」的语义，这页被推翻过一次，别又改回去**：标签 `[1天][2天][4天][7天][15天]` 说的是第几个复习**节点**，节点日期从**建卡那天**往后推（建卡日 +1/+2/+4/+7/+15 天）—— 9/13 建的卡在 [1天] 里落在 9/14、[2天] 里落在 9/15、[4天] 里落在 9/17。节点日期过了也照列，标 `✓ 已完成` / `已逾期`，**不隐藏**（它是计划表，不是「今天该复习什么」的待办）。2026-09-13 上午那版按 `next_review_due` 分区（[1天]=今天到期、[2天]=明天到期），用户当场否掉。**判定「今天要不要复习」的唯一依据始终是 `next_review_due`**，那是复习页和右上角铃铛的事，与这一页无关。
+
+**别把这条护栏改成在 Python 里重写一遍推算规则**：那是平行实现，抄错了照样绿。没装 node 的环境自动 skip。
+
+同一个文件里另有一条只看 `web/style.css` 静态文本的断言：筛选栏必须是**一行横着滚**（`overflow-x: auto`）、不许出现 `flex-wrap`、也不许把滚动条藏掉。换行会让「全部」掉到第二行孤零零一个（2026-09-13 用户当场否掉过），藏滚动条则没人知道右边还有按钮。按钮顺序（`全部` 最前）由 `schedule_page_check.js` 直接读 index.html 断言。
 
 历史遗留：Windows 上若 `%TEMP%\pytest-of-<user>` 被残留锁住，会看到一批 `PermissionError: [WinError 5] 拒绝访问` 的收集错误——与代码无关，加 `--basetemp=<一个新目录>` 即可绕过。Linux 容器里不会出现。
 

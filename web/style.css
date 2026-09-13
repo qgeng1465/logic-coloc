@@ -405,6 +405,11 @@ select { width: 100%; height: 44px; border: 1px solid var(--line-strong); border
 .settings-menu #accountSettingsButton::before { content: "♙"; margin-right: 12px; color: var(--brand-600); }
 .settings-menu #aboutKnowledgeButton::before { content: "ⓘ"; margin-right: 12px; color: var(--brand-600); }
 .settings-menu #logoutButton::before { content: "⇥"; margin-right: 12px; color: var(--brand-600); }
+/* 这两条是后补的。漏掉 ::before 的代价不只是「少个图标」：.sheet-menu-button 是
+   space-between 布局，图标、文字、› 各算一个 flex 项，少一项文字就被挤到最左边
+   （截图里「切换账号」左对齐、其他三行居中，就是这个原因）。新加菜单项时记得一起加。 */
+.settings-menu #bindAccountButton::before { content: "⊕"; margin-right: 12px; color: var(--brand-600); }
+.settings-menu #switchAccountButton::before { content: "⇄"; margin-right: 12px; color: var(--brand-600); }
 .settings-account { margin: 0 0 12px; padding: 0 5px; color: var(--muted); font-size: 12px; }
 .settings-account strong { color: var(--ink); font-size: 13px; }
 .about-copy { margin: 4px 0 8px; color: var(--ink-soft); font-size: 15px; line-height: 1.8; }
@@ -505,7 +510,9 @@ body.auth-open { overflow: hidden; }
 .mini-card { width: 100%; text-align: left; padding: 15px; border: 1px solid var(--line); border-radius: var(--r-md); background: #E6F7FF; color: var(--ink); box-shadow: var(--sh-1); }
 .mini-card strong { display: block; margin-bottom: 7px; }
 .mini-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
-.mini-card-status { display: inline-block; margin-top: 10px; border-radius: var(--r-pill); padding: 3px 8px; background: var(--warn-bg); color: var(--warn); font-size: 10px; }
+/* 10px 在「已掌握 / 待复习」这种两三个字的状态词上偏小到发虚，抬到 12px；
+   padding 同步放大一点，否则字变大后药丸会被撑成方块。 */
+.mini-card-status { display: inline-block; margin-top: 10px; border-radius: var(--r-pill); padding: 4px 10px; background: var(--warn-bg); color: var(--warn); font-size: 12px; }
 .mini-card-status.mastered { background: var(--brand-100); color: var(--brand-700); }
 
 /* ---- 复习 ---- */
@@ -540,7 +547,9 @@ body.auth-open { overflow: hidden; }
 .review-grade.know { color: var(--brand-700); }
 .review-card-list { display: grid; gap: 10px; }
 .review-list-card { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 15px; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(255,255,255,.74); color: var(--ink); text-align: left; box-shadow: var(--sh-1); }
-.review-list-card p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+/* 卡片释义是这张卡的主体内容，却是整页最小的字（12px，比标题、比按钮都小）。
+   抬到 14px 与全站正文尺度一致，行高一起放到 1.75 —— 字号变大后行距不变会显得挤。 */
+.review-list-card p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.75; }
 .review-list-card .mini-card-status { margin: 0; }
 .review-reset { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; color: var(--brand-700); padding: 5px 0 0; font-size: 12px; }
 .review-filter-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: start; }
@@ -1116,10 +1125,32 @@ body.auth-open { overflow: hidden; }
 .schedule-curve circle { fill: var(--brand-600); }
 .schedule-curve text { fill: var(--muted); font-size: 10px; }
 .schedule-curve-card p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.schedule-filters { display: flex; gap: 8px; margin: 16px 0; overflow-x: auto; }
-.schedule-filters button { flex: 1 0 auto; min-height: 38px; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--glass-bg); color: var(--muted); }
+/* 六个按钮（全部 / 1天 / 2天 / 4天 / 7天 / 15天）加左边那句说明，390px 一行放不下 ——
+   **横着滚，不许换行**。换行（flex-wrap: wrap）会把「全部」甩到第二行孤零零一个，排版很难看，
+   2026-09-13 试过、用户当场否掉。所以「全部」挪到最前（index.html 里第一个 data-schedule-filter），
+   一屏之内最常用的那个不用滚就够得着。
+   ⚠️ 滚动条是**故意留着**的（scrollbar-width: thin）：这是用户点名要的「横着的滚轮」，
+   改成 scrollbar-width: none 就没人知道右边还有 7天/15天 两个按钮。
+   ⚠️ 外面那圈 padding 是给滚动条和键盘焦点框留的位置：只留底部，焦点框顶部会被 overflow 裁掉。
+   颜色、圆角、选中态全部沿用下面两条，一个像素没动。 */
+.schedule-filters {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 2px 2px 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+/* 光看「1天 / 2天 / …」几个按钮不知道在筛什么，左边补一句「复习计划」当说明。
+   它是文字说明不是按钮：不参与 flex 均分（否则会被拉成一个大胶囊），
+   也不跟着 .schedule-filters button 的样式走。 */
+.schedule-filters-label { flex: 0 0 auto; align-self: center; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.schedule-filters button { flex: 0 0 auto; min-height: 38px; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--glass-bg); color: var(--muted); }
 .schedule-filters button.active { border-color: var(--brand-600); background: var(--brand-100); color: var(--brand-700); font-weight: 700; }
 .schedule-list { display: grid; gap: 14px; }
+/* 「全部」那一栏里，日期标题是可以点开合上的（JS 给它挂了 role="button"）。
+   只加鼠标手型：字体、颜色、间距全都沿用上面的 .schedule-group h3，一个像素都不动。 */
+.schedule-group h3[role="button"] { cursor: pointer; }
 /* 复盘确认弹层必须盖在 .fullscreen-page（z-index 40）之上：笔记复盘页本身就是全屏页，
    默认的 .bottom-sheet 层（z-index 31）会被它整层遮住，表现为"选中笔记后要点返回才看得到弹层"。
    这里只给这一个弹层提层 —— 不能全局抬 .bottom-sheet，因为附件预览依赖
@@ -1233,6 +1264,7 @@ body.auth-open { overflow: hidden; }
   /* 面：与页面中段底色同源，压在渐变背景上不会跳出来 */
   --nm-face:        rgba(238, 245, 255, .66);
   --nm-face-strong: rgba(245, 250, 255, .88);   /* 需要更"实"的面：长文结果卡、闪卡 */
+  --nm-face-white:  #fff;                       /* 纯白面：只给「学习日志」的整块容器，见下 */
   --nm-hi:    rgba(255, 255, 255, .95);         /* 左上受光 */
   --nm-hi-sm: rgba(255, 255, 255, .85);
   --nm-lo:    rgba(64, 100, 148, .26);          /* 右下投影（带蓝，不发灰） */
@@ -1282,6 +1314,13 @@ body.auth-open { overflow: hidden; }
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* ---- 学习日志：曲线卡与「计划日期」分组改用纯白面 ----
+   这两块和它们里面的 .schedule-item 原本共用 --nm-face（带蓝的半透明面），而页面底色
+   也是蓝的 —— 容器、条目、背景三层同色，整页看不出「一块一块」的分界。换成纯白面后
+   分组从蓝底上抬起来，条目仍留在蓝面上，容器与条目的层次同时出来。
+   只改 background：描边与光影沿用上面第 1 组，观感不至于跳出新拟态那一套。 */
+.schedule-curve-card, .schedule-group { background: var(--nm-face-white); }
 
 /* ---- 3. 闪卡：保留原来的蓝调面（色调不改），只换成一对软阴影 ---- */
 .flash-face {

@@ -223,21 +223,42 @@ function extractFirstUrl(value) {
   return match ? match[0].replace(/[，。！？、；：,.!?;:]+$/, "") : null;
 }
 
-const REVIEW_INTERVAL_SECONDS = [5 * 60, 30 * 60, 12 * 60 * 60, 24 * 60 * 60, 2 * 24 * 60 * 60, 4 * 24 * 60 * 60, 7 * 24 * 60 * 60, 15 * 24 * 60 * 60, 30 * 86400, 90 * 86400, 180 * 86400, 365 * 86400];
+// 复习排期，单位秒，**一律以「天」为粒度**。必须与后端 api/card_store.py 的
+// EBBINGHAUS_INTERVALS + EBBINGHAUS_LONG_INTERVALS 首尾相接后逐项一致 —— 两边各算一次
+// 排期（前端离线先落盘、后端 review_card 也会算），表不一致就会出现「同一次复习两个到期日」。
+// 页面上那几个「按天」的地方（曲线图 x 轴、学习日志那五栏的分界）也都是照这张表写的 ——
+// 这张表是排期唯一的事实来源，别再另抄一份。
+const REVIEW_INTERVAL_SECONDS = [86400, 2 * 86400, 4 * 86400, 7 * 86400, 15 * 86400, 30 * 86400, 90 * 86400, 180 * 86400, 365 * 86400];
 const newReviewFields = () => ({ status: "unmastered", last_reviewed_at: null, next_review_due: new Date().toISOString(), review_stage: 0, ease_factor: 2.5 });
-function isCardDue(card, now = Date.now()) { const due = Date.parse(card.next_review_due || card.createdAt || 0); return card.status === "unmastered" && (!Number.isFinite(due) || due <= now); }
+// 到期与否**只看时间**，不看存下来的 status（status 是下面 cardStatusOf 派生的结果）。
+function isCardDue(card, now = Date.now()) { const due = Date.parse(card.next_review_due || card.createdAt || 0); return !Number.isFinite(due) || due <= now; }
+// 卡片状态是**派生**的：到期 = 未掌握（该复习了），没到期 = 已掌握（这一轮已经巩固过）。
+// 以前「已掌握」要求连续 8 次「认识」，于是刚复习完的卡既不算已掌握、又还没到期，
+// 三个 tab 的徽章会出现「未掌握 0 + 已掌握 0 ≠ 全部 1」。现在复习完就是已掌握，
+// 到点自动变回未掌握 —— 不需要任何定时任务，每次读卡片时重算一遍即可（见 getBooks）。
+function cardStatusOf(card, now = Date.now()) { return isCardDue(card, now) ? "unmastered" : "mastered"; }
+// 「还有多久到期」的人话，只用在复习空态那一行，粗粒度就够。
+function formatReviewEta(ms) { const minutes = Math.max(1, Math.round(ms / 60000)); if (minutes < 60) return `${minutes} 分钟`; const hours = Math.round(minutes / 60); if (hours < 24) return `${hours} 小时`; return `${Math.max(1, Math.round(hours / 24))} 天`; }
+// 复习队列空了时的那句话。队列空了只可能是两种：一张卡都没有，或者全都复习过了
+// （未掌握 ⟺ 到期，所以「有卡但没到期」就等于「已掌握」）。后一种要顺带说清下次什么时候来 ——
+// 用户会问「我都复习完了，它什么时候再考我」，这句就是回答。
+function reviewTestEmptyMessage() { const cards = allReviewCards(); if (!cards.length) return "还没有卡片哦 —— 去「卡片」里新建，或从一次同源发现里把结果存成卡片吧！"; const upcoming = cards.map((card) => Date.parse(card.next_review_due || 0)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b)[0]; const eta = Number.isFinite(upcoming) ? `最近一张 ${formatReviewEta(upcoming - Date.now())}后到期` : "下一张的到期时间还没排"; return `今天的复习都完成啦！${cards.length} 张都已掌握，${eta}，到点会自动回到未掌握。`; }
 function scheduleCardLocally(card, quality) {
-  const now = new Date(); card.last_reviewed_at = now.toISOString(); card.status = "unmastered";
+  const now = new Date(); card.last_reviewed_at = now.toISOString();
   if (quality === "忘记了") { card.review_stage = 0; card.next_review_due = now.toISOString(); }
-  else if (quality === "模糊") card.next_review_due = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
-  else { const stage = Math.max(0, Number(card.review_stage) || 0); card.review_stage = stage + 1; const index = Math.min(card.review_stage - 1, REVIEW_INTERVAL_SECONDS.length - 1); card.next_review_due = new Date(now.getTime() + REVIEW_INTERVAL_SECONDS[index] * 1000).toISOString(); if (card.review_stage >= 8) card.status = "mastered"; }
+  // 模糊：算复习过（所以是已掌握），但排期拉回最短一档，明天再来一次。
+  else if (quality === "模糊") card.next_review_due = new Date(now.getTime() + 86400 * 1000).toISOString();
+  else { const stage = Math.max(0, Number(card.review_stage) || 0); card.review_stage = stage + 1; const index = Math.min(card.review_stage - 1, REVIEW_INTERVAL_SECONDS.length - 1); card.next_review_due = new Date(now.getTime() + REVIEW_INTERVAL_SECONDS[index] * 1000).toISOString(); }
+  // 状态一律由「排到什么时候」推出来，不再单算：复习完（除了「忘记了」= 立刻到期）就是已掌握。
+  card.status = cardStatusOf(card, now.getTime());
   card.ease_factor = Number(card.ease_factor) || 2.5; return card;
 }
 
 let toastTimer;
 function showToast(message) { window.clearTimeout(toastTimer); $("toast").textContent = message; $("toast").hidden = false; toastTimer = window.setTimeout(() => { $("toast").hidden = true; }, 2000); }
 let lastDueNotificationCount = 0, currentDueNotificationCount = 0;
-function renderNotificationBadge(count) { const badge = $("notificationBadge"), value = Math.max(0, Number(count) || 0); badge.textContent = value > 99 ? "99+" : String(value); badge.hidden = value === 0; $("notificationButton").setAttribute("aria-label", value ? `查看 ${value} 张待复习卡片` : "暂无待复习卡片"); }
+function renderNotificationBadge(count) { const badge = $("notificationBadge"), value = Math.max(0, Number(count) || 0); badge.textContent = value > 99 ? "99+" : String(value); badge.hidden = value === 0; // 铃铛数的是「今天到期的」，跟复习页 tab 徽章的「未掌握（状态）」不是一回事，措辞上分开。
+  $("notificationButton").setAttribute("aria-label", value ? `查看 ${value} 张今天到期的卡片` : "今天没有到期的卡片"); }
 async function checkDueCards({ notify = false } = {}) {
   const localDue = allReviewCards().filter((card) => isCardDue(card));
   // 本地卡片是复习页的权威数据源；后端只做可用性探测，避免两套存储重复计数。
@@ -851,7 +872,7 @@ const SEED_CATEGORY_IDS = ["learning", "research"];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const makeId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 function readStore(key, fallback) { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value : clone(fallback); } catch { return clone(fallback); } }
-function getBooks() { const books = readStore(storageKeys.books, []); let changed = !localStorage.getItem(storageKeys.books); books.forEach((book) => (book.cards || []).forEach((card) => { const defaults = newReviewFields(); Object.keys(defaults).forEach((key) => { if (card[key] === undefined) { card[key] = defaults[key]; changed = true; } }); const created = card.created_at || card.createdAt || card.created || new Date().toISOString(); if (!card.created_at) { card.created_at = created; changed = true; } if (!card.createdAt) { card.createdAt = created; changed = true; } if (card.last_reviewed_at === undefined) { card.last_reviewed_at = null; changed = true; } const stage = Number(card.review_stage) || 0; if (card.status !== "mastered" && stage > 0 && stage <= 5) { const due = new Date(new Date(created).getTime() + [86400000, 2 * 86400000, 4 * 86400000, 7 * 86400000, 15 * 86400000][stage - 1]); if (!card.next_review_due || Number.isNaN(due.getTime())) { card.next_review_due = due.toISOString(); changed = true; } } })); if (changed) localStorage.setItem(storageKeys.books, JSON.stringify(books)); return books; }
+function getBooks() { const books = readStore(storageKeys.books, []); let changed = !localStorage.getItem(storageKeys.books); books.forEach((book) => (book.cards || []).forEach((card) => { const defaults = newReviewFields(); Object.keys(defaults).forEach((key) => { if (card[key] === undefined) { card[key] = defaults[key]; changed = true; } }); const created = card.created_at || card.createdAt || card.created || new Date().toISOString(); if (!card.created_at) { card.created_at = created; changed = true; } if (!card.createdAt) { card.createdAt = created; changed = true; } if (card.last_reviewed_at === undefined) { card.last_reviewed_at = null; changed = true; } const stage = Number(card.review_stage) || 0; if (card.status !== "mastered" && stage > 0 && stage <= 5) { const due = new Date(new Date(created).getTime() + [86400000, 2 * 86400000, 4 * 86400000, 7 * 86400000, 15 * 86400000][stage - 1]); if (!card.next_review_due || Number.isNaN(due.getTime())) { card.next_review_due = due.toISOString(); changed = true; } } const derived = cardStatusOf(card); if (card.status !== derived) { card.status = derived; changed = true; } })); if (changed) localStorage.setItem(storageKeys.books, JSON.stringify(books)); return books; }
 function saveBook(book) { const books = getBooks(); const index = books.findIndex((item) => item.id === book.id); if (index >= 0) books[index] = book; else books.push(book); localStorage.setItem(storageKeys.books, JSON.stringify(books)); pushLibrary({ books }); return book; }
 function getNotes() { const notes = readStore(storageKeys.notes, []), seen = new Set(); let changed = false; notes.forEach((note) => { note.attachments = (note.attachments || []).filter((file) => { const key = file.id || file.url || `${file.name}:${file.size}`; const owner = file.noteId || note.id; if (owner !== note.id || seen.has(key)) { changed = true; return false; } if (!file.noteId) { file.noteId = note.id; changed = true; } seen.add(key); return true; }); }); if (!localStorage.getItem(storageKeys.notes) || changed) localStorage.setItem(storageKeys.notes, JSON.stringify(notes)); return notes.sort((a, b) => new Date(b.date) - new Date(a.date)); }
 function saveNote(note) { const notes = getNotes(); const index = notes.findIndex((item) => item.id === note.id); if (index >= 0) notes[index] = note; else notes.unshift(note); localStorage.setItem(storageKeys.notes, JSON.stringify(notes)); return note; }
@@ -1292,8 +1313,24 @@ function closeSettingsSheet() { $("settingsSheet").hidden = true; if (!document.
 function openAboutSheet() { closeSettingsSheet(); $("sheetBackdrop").hidden = false; $("aboutSheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeAboutSheet() { $("aboutSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
 function allReviewCards() { return getBooks().flatMap((book) => book.cards.map((card) => ({ ...card, bookId: book.id, bookName: book.name }))); }
-function updateReviewCounts() { const cards = allReviewCards(); $("unmasteredCount").textContent = cards.filter((card) => isCardDue(card)).length; $("masteredCount").textContent = cards.filter((card) => card.status === "mastered").length; $("allCount").textContent = cards.length; }
-function persistReviewStatus(cardRef, status) { const book = getBooks().find((item) => item.id === cardRef.bookId); const card = book?.cards.find((item) => item.id === cardRef.id); if (!card || card.status === status) return false; card.status = status; saveBook(book); return true; }
+// 徽章必须数「点进这个 tab 会看到的东西」：三个 tab 是状态分类（未掌握/已掌握/全部），
+// 所以未掌握 = status 未掌握，未掌握 + 已掌握 = 全部。以前这里数的是「今天到期的」，
+// 于是复习完最后一张就出现「未掌握 0 + 已掌握 0 ≠ 全部 1」，而且从「我的记录 → 未掌握卡片 1」
+// 点进来会变成 0。今天到期的张数在右上角铃铛（renderNotificationBadge）那边，别混进来。
+function updateReviewCounts() { const cards = allReviewCards(); $("unmasteredCount").textContent = cards.filter((card) => card.status === "unmastered").length; $("masteredCount").textContent = cards.filter((card) => card.status === "mastered").length; $("allCount").textContent = cards.length; }
+// 手动改状态。因为状态是派生的，光改 status 会被下一次 getBooks() 立刻改回去 ——
+// 必须连着到期时间一起改：「移出已掌握」= 立刻到期、重新进复习队列；
+// 「标记为已掌握」= 把到期时间推到至少明天（没有到期时间就没法「已掌握」）。
+function persistReviewStatus(cardRef, status) {
+  const book = getBooks().find((item) => item.id === cardRef.bookId);
+  const card = book?.cards.find((item) => item.id === cardRef.id);
+  if (!card || card.status === status) return false;
+  card.status = status;
+  if (status === "unmastered") card.next_review_due = new Date().toISOString();
+  else if (!(Date.parse(card.next_review_due) > Date.now())) card.next_review_due = new Date(Date.now() + 86400000).toISOString();
+  saveBook(book);
+  return true;
+}
 function switchReviewFilter(filter) { reviewFilter = filter; document.querySelectorAll(".review-filter").forEach((button) => button.classList.toggle("active", button.dataset.reviewFilter === filter)); const testing = filter === "unmastered"; $("reviewTest").hidden = !testing; $("reviewLibrary").hidden = testing; if (testing) buildReviewQueue(); else { updateReviewCounts(); renderReviewLibrary(filter); } }
 
 function removeReviewCards(ids) { const wanted = new Set(ids); getBooks().forEach((book) => { const cards = book.cards.filter((card) => !wanted.has(card.id)); if (cards.length !== book.cards.length) { book.cards = cards; saveBook(book); } }); updateReviewCounts(); renderProfile(); }
@@ -1301,16 +1338,38 @@ function buildReviewQueue() { const allCards = allReviewCards(); reviewQueue = a
 function readReviewSession() { try { const value = JSON.parse(localStorage.getItem(storageKeys.reviewSession)); return { total: Number(value?.total) || 0, mastered: Number(value?.mastered) || 0, difficult: new Set(value?.difficult || []) }; } catch { return { total: 0, mastered: 0, difficult: new Set() }; } }
 function saveReviewSession() { localStorage.setItem(storageKeys.reviewSession, JSON.stringify({ total: reviewStats.total, mastered: reviewStats.mastered, difficult: [...reviewStats.difficult] })); }
 function setReviewPhase(phase, choice = null) { reviewPhase = phase; const answer = phase === "answer"; if (choice) { pendingMemoryChoice = choice; if (choice !== "know" && reviewQueue[reviewPosition]) reviewStats.difficult.add(reviewQueue[reviewPosition].id); saveReviewSession(); } if (!answer) pendingMemoryChoice = null; $("flashcard").classList.toggle("flipped", answer); $("memoryActions").hidden = answer; $("answerActions").hidden = !answer; const choiceLabel = { know: "认识", vague: "模糊", forgot: "忘记了" }[pendingMemoryChoice]; $("reviewHint").textContent = answer ? `你刚才选择了「${choiceLabel || "查看释义"}」。请对照释义，再决定“下一词”或“记错了”` : "瞬间想起含义，选「认识」；思考后想起含义，选「模糊」"; }
-function updateReviewCard() { const card = reviewQueue[reviewPosition]; $("flashcard").classList.remove("flipped", "leaving"); setReviewPhase("memory"); if (!card) { const user = getUser(), avatar = localStorage.getItem("userAvatar") || user.avatarUrl || ""; $("reviewCompleteAvatar").src = avatar || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23e4f0ea'/%3E%3Cpath d='M18 41c4-13 8-19 14-19s10 6 14 19' fill='none' stroke='%23176b4d' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='26' cy='29' r='2' fill='%23176b4d'/%3E%3Ccircle cx='38' cy='29' r='2' fill='%23176b4d'/%3E%3C/svg%3E"; $("flashcard").hidden = true; $("reviewComplete").hidden = false; $("reviewProgress").textContent = reviewStats.total ? "已完成" : "0 / 0"; $("memoryActions").hidden = true; $("answerActions").hidden = true; $("reviewHint").hidden = true; // 这个分支同时服务"进来就没卡"和"复习完最后一张"，靠 reviewStats.total 区分：两者都显示「🎉 今日复习任务完成」的话，新账号一进来看到的就是假的庆祝。
-  $("reviewCompleteTitle").hidden = !reviewStats.total; $("reviewCompleteText").textContent = reviewStats.total ? `本次复习 ${reviewStats.total} 张卡片，其中已掌握 ${reviewStats.mastered} 张，模糊/遗忘 ${reviewStats.difficult.size} 张。` : "今天没有需要复习的卡片啦！"; $("pointsChip").textContent = `累计能量 ${getPoints()}`; updateReviewCounts(); return; } $("flashcard").hidden = false; $("reviewComplete").hidden = true; $("reviewHint").hidden = false; $("flashFront").textContent = card.front; $("flashBack").textContent = card.back; [["flashFrontImage", card.frontImageUrl], ["flashBackImage", card.backImageUrl]].forEach(([id, url]) => { $(id).src = url || ""; $(id).hidden = !url; }); $("reviewProgress").textContent = `${reviewStats.total - reviewQueue.length + 1} / ${reviewStats.total}`; }
-async function applyReviewSchedule(cardRef, quality) { const book = getBooks().find((item) => item.id === cardRef.bookId), card = book?.cards.find((item) => item.id === cardRef.id); if (!card) return; scheduleCardLocally(card, quality); saveBook(book); try { const response = await authFetch(apiUrl(`/api/cards/${encodeURIComponent(card.id)}/review`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) }); if (response.ok) { const data = await response.json(); Object.assign(card, data.card || {}); saveBook(book); } } catch { /* local schedule remains authoritative while offline */ } checkDueCards(); }
+function updateReviewCard() { const card = reviewQueue[reviewPosition]; $("flashcard").classList.remove("flipped", "leaving"); setReviewPhase("memory"); if (!card) { const user = getUser(), avatar = localStorage.getItem("userAvatar") || user.avatarUrl || ""; $("reviewCompleteAvatar").src = avatar || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23e4f0ea'/%3E%3Cpath d='M18 41c4-13 8-19 14-19s10 6 14 19' fill='none' stroke='%23176b4d' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='26' cy='29' r='2' fill='%23176b4d'/%3E%3Ccircle cx='38' cy='29' r='2' fill='%23176b4d'/%3E%3C/svg%3E"; $("flashcard").hidden = true; $("reviewComplete").hidden = false; $("reviewProgress").textContent = reviewStats.total ? "已完成" : "今日 0 张"; $("memoryActions").hidden = true; $("answerActions").hidden = true; $("reviewHint").hidden = true; // 这个分支同时服务"进来就没卡"和"复习完最后一张"，靠 reviewStats.total 区分：两者都显示「🎉 今日复习任务完成」的话，新账号一进来看到的就是假的庆祝。
+  $("reviewCompleteTitle").hidden = !reviewStats.total; $("reviewCompleteText").textContent = reviewStats.total ? `本次复习 ${reviewStats.total} 张卡片，其中一次就想起 ${reviewStats.mastered} 张、模糊或遗忘 ${reviewStats.difficult.size} 张。` : reviewTestEmptyMessage(); $("pointsChip").textContent = `累计能量 ${getPoints()}`; updateReviewCounts(); return; } $("flashcard").hidden = false; $("reviewComplete").hidden = true; $("reviewHint").hidden = false; $("flashFront").textContent = card.front; $("flashBack").textContent = card.back; [["flashFrontImage", card.frontImageUrl], ["flashBackImage", card.backImageUrl]].forEach(([id, url]) => { $(id).src = url || ""; $(id).hidden = !url; }); $("reviewProgress").textContent = `${reviewStats.total - reviewQueue.length + 1} / ${reviewStats.total}`; }
+async function applyReviewSchedule(cardRef, quality) {
+  const book = getBooks().find((item) => item.id === cardRef.bookId);
+  const card = book?.cards.find((item) => item.id === cardRef.id);
+  // 本地书架里查不到也要往下走 —— 卡片可能只存在于服务端（本地那份书架的写入失败过），
+  // 那种情况下**服务端照样得推进它的排期**，不能在这里静默 return 把整次复习吞掉。
+  if (card) { scheduleCardLocally(card, quality); saveBook(book); }
+  try {
+    const response = await authFetch(apiUrl(`/api/cards/${encodeURIComponent(cardRef.id)}/review`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quality }) });
+    if (response.ok) {
+      const data = await response.json();
+      // **排期以服务端返回的为准**。本地那份是「复习时刻 + 间隔」自己算的，服务端算的是同一个东西，
+      // 但只有它写进了 cards.json —— 只信本地就会「刚复习完的卡还挂在今天」。
+      if (card) { Object.assign(card, data.card || {}); saveBook(book); }
+      const known = scheduleCards.find((item) => item.id === cardRef.id);
+      if (known) Object.assign(known, data.card || {});
+      Object.assign(cardRef, data.card || {});
+    }
+  } catch { /* 离线：本地那份排期先顶着，下次开学习日志会用服务端那份覆盖回来 */ }
+  await checkDueCards();
+  // 学习日志页开着的话，立刻按服务端最新排期重画 —— 刚复习完的那张必须当场从「1天」挪到「2天」，
+  // 不能等用户自己退出去再进来。
+  if ($("schedulePage") && !$("schedulePage").hidden) { await refreshScheduleCards(); renderSchedule(scheduleFilter); }
+}
 async function slideToNext(quality) { const current = reviewQueue[reviewPosition]; if (!current) return; $("flashcard").classList.add("leaving"); await applyReviewSchedule(current, quality); if (quality === "掌握") { addPoints(10, "复习掌握"); reviewStats.mastered += 1; } else reviewStats.difficult.add(current.id); reviewQueue.splice(reviewPosition, 1); if (quality === "忘记了") reviewQueue.push(current); saveReviewSession(); reviewPosition = 0; window.setTimeout(updateReviewCard, 240); }
 function finishReviewAnswer(action) { if (!reviewQueue[reviewPosition]) return; const quality = action === "wrong" || pendingMemoryChoice === "forgot" ? "忘记了" : pendingMemoryChoice === "vague" ? "模糊" : "掌握"; slideToNext(quality); }
 function renderReviewLibrary(filter) { const cards = allReviewCards().filter((card) => filter === "all" || card.status === filter); const list = $("reviewCardList"); list.replaceChildren();
   // 列表为空时以前是整片空白：「未掌握」那个 tab 走的是复习测试、有自己的「今天没有需要复习的
   // 卡片啦！」，而「已掌握」「全部」直接落在这个列表上，什么提示都没有。三个 tab 各给一句，
   // 措辞跟未掌握那条对齐（「未掌握」这里只在编辑模式下会显示列表，所以也要有）。
-  if (!cards.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = filter === "mastered" ? "还没有已掌握哦" : filter === "unmastered" ? "没有待复习的卡片哦" : "还没有卡片哦"; list.append(empty); return; }
+  if (!cards.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = filter === "mastered" ? "还没有已掌握哦 —— 复习过的卡片当天就算已掌握，到期后会自动变回未掌握" : filter === "unmastered" ? "没有待复习的卡片哦" : "还没有卡片哦"; list.append(empty); return; }
   cards.forEach((card) => { const item = document.createElement("article"); item.className = `review-list-card${reviewManageMode ? " manage" : ""}${selectedReviewIds.has(card.id) ? " selected" : ""}`; const title = document.createElement("strong"); title.textContent = card.front; const status = document.createElement("span"); status.className = `mini-card-status ${card.status}`; status.textContent = card.status === "mastered" ? "已掌握" : "待复习"; const body = document.createElement("p"); body.textContent = card.back; if (reviewManageMode) { const check = document.createElement("span"); check.className = "review-check"; check.textContent = "✓"; item.append(check); item.addEventListener("click", () => { if (selectedReviewIds.has(card.id)) selectedReviewIds.delete(card.id); else selectedReviewIds.add(card.id); renderReviewLibrary(filter); }); } else { const more = document.createElement("button"); more.type = "button"; more.className = "review-more"; more.textContent = "⋮"; more.addEventListener("click", () => openReviewCardAction(card)); item.append(more); } item.append(title, status, body); list.append(item); }); }
 function setReviewManageMode(enabled) { reviewManageMode = enabled; selectedReviewIds.clear(); $("reviewManageToolbar").hidden = !enabled; $("reviewEdit").textContent = enabled ? "完成" : "编辑"; $("reviewUnmasterSelected").hidden = reviewFilter !== "mastered"; if (reviewFilter === "unmastered") { $("reviewTest").hidden = enabled; $("reviewLibrary").hidden = !enabled; } renderReviewLibrary(reviewFilter); }
 function openReviewCardAction(card) { activeReviewCard = card; $("reviewActionTitle").textContent = card.front; $("toggleReviewCardStatus").textContent = card.status === "mastered" ? "移出已掌握" : "标记为已掌握"; $("sheetBackdrop").hidden = false; $("reviewCardActionSheet").hidden = false; document.body.classList.add("sheet-open"); }
@@ -1355,30 +1414,142 @@ function renderNotes(query = "") {
 // 前一份，那份永远不会执行，已删除。屏幕上显示的本来就是下面这一份，外观无变化。）
 function renderRules() { const levels = [["LV.1 学术萌新","0–99","建立习惯"],["LV.2 知识学徒","100–299","积累知识"],["LV.3 科研助手","300–499","辅助研究"],["LV.4 探索达人","500–999","跨域探索"],["LV.5 刘看山首席研究员","1000+","持续创造"]]; const actions = [["每日登录","+3","揉揉眼睛醒来，获得今日口粮"],["读懂新概念","+10","头顶冒出小灯泡"],["深入追问（达3次）","+5","戴上小眼镜陪你钻研"],["发现跨学科同源","+15","拿到放大镜，找到逻辑宝藏"],["存为知识卡片","+5","把知识果实放进小背包"],["复习考核掌握","+10","开心转圈圈，播撒星星"],["复习考核遗忘/模糊","+2","拍拍你，鼓励“没关系，再来一次”"],["新建笔记","+10","在纸上画下你的思考轨迹"],["整理书架/新建书籍","+5","整理书架，成就感满满"]]; const fill = (id, rows) => { const box = $(id); box.replaceChildren(); rows.forEach(([name, energy, note]) => { const row = document.createElement("div"); row.className = "table-row"; const strong = document.createElement("strong"); strong.textContent = name; const value = document.createElement("span"); value.className = "energy"; value.textContent = energy; const text = document.createElement("p"); text.textContent = note; row.append(strong, value, text); box.append(row); }); }; fill("levelTable", levels); fill("pointsTable", actions); }
 function renderProfile() { const user = getUser(), points = getPoints(), level = getLevelInfo(points), cards = allReviewCards(), first = localStorage.getItem(storageKeys.firstLogin) || new Date().toISOString(); if (!localStorage.getItem(storageKeys.firstLogin)) localStorage.setItem(storageKeys.firstLogin, first); $("profileNickname").textContent = user.nickname; $("profileSignature").textContent = user.signature; $("profileAvatar").src = user.avatarUrl || ""; $("profileAvatar").hidden = !user.avatarUrl; $("avatarFallback").hidden = Boolean(user.avatarUrl); $("levelLabel").textContent = `${level.level} · ${level.title}`; $("rulesLevel").textContent = `${level.level} · ${level.title}`; $("profilePoints").textContent = points; $("rulesPoints").textContent = points; $("levelProgress").style.width = `${level.progressPercent}%`; $("rulesProgress").style.width = `${level.progressPercent}%`; $("levelRemaining").textContent = level.nextMax === null ? "已达到最高等级" : `距离下一级还差 ${level.nextMax - points} 能量`; $("recordMastered").textContent = cards.filter((card) => card.status === "mastered").length; $("recordUnmastered").textContent = cards.filter((card) => card.status === "unmastered").length; $("recordDays").textContent = Math.max(1, Math.floor((Date.now() - new Date(first)) / 86400000) + 1); }
-let scheduleCards = [];
-const scheduleDaysForStage = (stage) => [1, 2, 4, 7, 15][Math.min(5, Math.max(1, Number(stage) || 1)) - 1];
+let scheduleCards = [], scheduleFilter = "1";
+// —— 复习计划表（这一页唯一的规则，改之前先读完）——
+//
+// 标签 [1天] [2天] [4天] [7天] [15天] 说的是**第几个复习节点**，不是「今天/明天到期」。
+// 每个节点的日期从**建卡那天**往后推：第 1 天 = 建卡日 +1 天、第 2 天 = 建卡日 +2 天、
+// 第 4 天 = +4 天、第 7 天 = +7 天、第 15 天 = +15 天。所以：
+//
+//   9/13 建 apple → [1天] 落在 9/14、[2天] 落在 9/15、[4天] 落在 9/17
+//   9/14 建 banana → [1天] 落在 9/15、[2天] 落在 9/16、[4天] 落在 9/18
+//
+// ⚠️ 这是一张**计划表**，不是「今天该复习什么」的待办。节点日期过了也照样列出来 ——
+// 复习过的标「✓ 已完成」，拖过去还没复习的标「已逾期」，**不隐藏**：隐藏了用户就看不到
+// 自己错过了哪几个节点。判定「今天要不要复习」的唯一依据是 next_review_due，那是复习页
+// 和右上角铃铛的事，跟这一页无关。
+//
+// 别改回「按 next_review_due 分区」那版（2026-09-13 试过，用户当场否掉）：那样 [2天] 里
+// 只会剩下明天到期的卡，而用户要的是「每张卡在未来的第 N 天分别落在哪一天」这张时间表。
+const SCHEDULE_PLAN_DAYS = [1, 2, 4, 7, 15];
+// 日期只取「日」——建卡那一刻的时分秒丢掉，一律用本地零点当锚点，否则「+N 天」会被时分带偏一天。
 function scheduleDayKey(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "unknown" : new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(); }
-function scheduleLabel(key) { if (key === "unknown") return "待安排"; const date = new Date(Number(key)), today = scheduleDayKey(new Date()), tomorrow = today + 86400000; const prefix = key === today ? "今天" : key === tomorrow ? "明天" : "计划日期"; return `${prefix} · ${date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}`; }
-function formatRecentReview(value) { if (!value) return "最近复习：从未复习"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "最近复习：从未复习" : `最近复习：${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }
-function renderSchedule(filter = "all") { const list = $("scheduleList"); if (!list) return; document.querySelectorAll("[data-schedule-filter]").forEach((button) => button.classList.toggle("active", button.dataset.scheduleFilter === filter)); const cards = scheduleCards.filter((card) => filter === "all" || scheduleDaysForStage(card.review_stage) === Number(filter) || Math.round((new Date(card.next_review_due) - new Date(card.created_at || card.createdAt)) / 86400000) === Number(filter)); console.log("学习天数复习卡片", cards.map((card) => ({ 名称: card.front, review_stage: card.review_stage, next_review_due: card.next_review_due }))); list.replaceChildren(); if (!cards.length) { list.innerHTML = "<p class=\"empty-state\">当前筛选暂无复习卡片</p>"; return; } const groups = new Map(); cards.sort((a, b) => new Date(a.next_review_due) - new Date(b.next_review_due)).forEach((card) => { const key = scheduleDayKey(card.next_review_due); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(card); }); groups.forEach((items, key) => { const group = document.createElement("section"); group.className = "schedule-group"; const heading = document.createElement("h3"); heading.textContent = scheduleLabel(key); group.append(heading); items.forEach((card) => { const item = document.createElement("button"); item.type = "button"; item.className = "schedule-item"; const title = document.createElement("strong"); title.textContent = card.front || "未命名卡片"; const meta = document.createElement("small"); meta.textContent = `${card.bookName || "知识卡片"} · 第${Math.max(1, Number(card.review_stage) || 1)}次复习`; const recent = document.createElement("small"); recent.className = "schedule-recent"; recent.textContent = formatRecentReview(card.last_reviewed_at); const tag = document.createElement("span"); tag.textContent = `第${Math.max(1, Number(card.review_stage) || 1)}次`; item.append(title, meta, recent, tag); item.addEventListener("click", () => { activateAppPage("reviewPage"); reviewQueue = [card]; reviewPosition = 0; reviewStats = { total: 1, mastered: 0, difficult: new Set() }; switchReviewFilter("unmastered"); }); group.append(item); }); list.append(group); }); }
-async function openSchedulePage() { document.querySelectorAll(".fullscreen-page").forEach((page) => { page.hidden = page.id !== "schedulePage"; }); document.body.classList.add("schedule-open"); $("schedulePage").hidden = false; const localCards = allReviewCards(); scheduleCards = localCards; try { const response = await authFetch(apiUrl("/api/cards/schedule"), { cache: "no-store" }); if (response.ok) { const data = await response.json(); if (Array.isArray(data.cards)) { const remote = data.cards.map((card) => ({ ...card, created_at: card.created_at || card.createdAt, last_reviewed_at: card.last_reviewed_at ?? null })); const merged = new Map(scheduleCards.map((card) => [card.id, card])); remote.forEach((card) => merged.set(card.id, { ...merged.get(card.id), ...card })); scheduleCards = [...merged.values()]; } } } catch { /* local schedule remains available offline */ } renderSchedule("1"); }
-
-function renderScheduleFuture(filter = "all") {
-  const list = $("scheduleList"); if (!list) return;
-  document.querySelectorAll("[data-schedule-filter]").forEach((button) => button.classList.toggle("active", button.dataset.scheduleFilter === filter));
-  const periods = [1, 2, 4, 7, 15]; const plans = [];
-  scheduleCards.forEach((card) => {
-    const created = new Date(card.created_at || card.createdAt || card.created || Date.now());
-    if (Number.isNaN(created.getTime())) return;
-    periods.forEach((days) => { const due = new Date(created.getTime() + days * 86400000); if (filter === "all" || Number(filter) === days) plans.push({ ...card, planDays: days, planDue: due.toISOString() }); });
-  });
-  console.log("学习天数未来复习计划", plans.map((card) => ({ 名称: card.front, created_at: card.created_at || card.createdAt, review_stage: card.review_stage, next_review_due: card.planDue })));
-  list.replaceChildren(); if (!plans.length) { list.innerHTML = "<p class=\"empty-state\">当前筛选暂无复习卡片</p>"; return; }
-  const groups = new Map(); plans.sort((a, b) => new Date(a.planDue) - new Date(b.planDue)).forEach((card) => { const key = scheduleDayKey(card.planDue); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(card); });
-  groups.forEach((items, key) => { const group = document.createElement("section"); group.className = "schedule-group"; const heading = document.createElement("h3"); heading.textContent = scheduleLabel(key); group.append(heading); items.forEach((card) => { const item = document.createElement("button"); item.type = "button"; item.className = "schedule-item"; const title = document.createElement("strong"); title.textContent = card.front || "未命名卡片"; const meta = document.createElement("small"); meta.textContent = `${card.bookName || "知识卡片"} · 第${Math.max(1, Number(card.review_stage) || 1)}次复习 · ${card.status === "mastered" ? "已掌握" : "待巩固"} · ${card.planDays}天后复习`; const recent = document.createElement("small"); recent.className = "schedule-recent"; recent.textContent = formatRecentReview(card.last_reviewed_at); const tag = document.createElement("span"); tag.textContent = `${new Date(card.planDue).getMonth() + 1}月${new Date(card.planDue).getDate()}日`; item.append(title, meta, recent, tag); item.addEventListener("click", () => { activateAppPage("reviewPage"); reviewQueue = [card]; reviewPosition = 0; switchReviewFilter("unmastered"); }); group.append(item); }); list.append(group); });
+// 推算的锚点：建卡时间。老卡片可能没有 created_at（服务端 normalize_card 不补这个字段），
+// 依次往后找 —— 建卡时间 → 上次复习时间 → 下次到期时间 → 现在。有个真锚点就比按今天算强。
+function scheduleAnchor(card) {
+  for (const value of [card?.created_at, card?.createdAt, card?.created, card?.last_reviewed_at, card?.next_review_due]) {
+    // ⚠️ 必须写成 `value ? Date.parse(value) : NaN`。写成 `Date.parse(value || 0)` 会把
+    // null / "" 变成 Date.parse(0) = 0，而 0 **是**有限数 —— 于是一张 last_reviewed_at 为
+    // null 的卡会被当成 1970 年建的，整张计划表飘到半个世纪以前。
+    const at = value ? Date.parse(value) : NaN;
+    if (Number.isFinite(at) && at > 0) return at;
+  }
+  return Date.now();
 }
-// 详情页统一使用完整未来计划生成器，包含已掌握和待巩固卡片。
-renderSchedule = renderScheduleFuture;
+// 第 days 天那个节点落在哪一天（本地中午的时间戳，同一天怎么算都是同一天）。
+function schedulePlanDate(card, days) { const base = new Date(scheduleAnchor(card)); return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days, 12).getTime(); }
+// 分组标题就是那个日期本身。用户明确要求按计划日期分组，别再写「今天/明天」——
+// 这是一张未来时间表，「明天」这种相对说法在这一页没有意义。
+function scheduleLabel(key) { if (key === "unknown") return "待安排"; const date = new Date(Number(key)); return `${date.getMonth() + 1}月${date.getDate()}日`; }
+function formatRecentReview(value) { if (!value) return "最近复习：从未复习"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "最近复习：从未复习" : `最近复习：${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }
+// 这一条节点的状态。review_stage 是「已经复习过几次」，正好等于「前几个节点已经走完」——
+// 复习过 3 次就是第 1/2/4 天那三个节点都完成了。所以拿它跟节点序号比。
+// 日期过了却还没复习 = 逾期，如实标出来（计划表的价值就在这里）。
+function scheduleEntryState(entry) {
+  if ((Number(entry.card.review_stage) || 0) > entry.index) return "✓ 已完成";
+  return entry.at < scheduleDayKey(Date.now()) ? "已逾期" : "待复习";
+}
+function scheduleEntry(entry) {
+  const item = document.createElement("button"); item.type = "button"; item.className = "schedule-item";
+  const title = document.createElement("strong"); title.textContent = entry.card.front || "未命名卡片";
+  const meta = document.createElement("small"); meta.textContent = `${entry.card.bookName || "知识卡片"} · 第${entry.days}天复习`;
+  const recent = document.createElement("small"); recent.className = "schedule-recent"; recent.textContent = formatRecentReview(entry.card.last_reviewed_at);
+  const tag = document.createElement("span"); tag.textContent = scheduleEntryState(entry);
+  item.append(title, meta, recent, tag);
+  // 点条目就去复习它。别自己拼 reviewQueue —— activateAppPage 内部会 switchReviewFilter("unmastered")，
+  // 那一步 buildReviewQueue() 会把队列按「今天到期的」整个重建，手工塞的那一条立刻被覆盖掉。
+  item.addEventListener("click", () => { closeSchedulePage(); activateAppPage("reviewPage"); });
+  return item;
+}
+// 一个计划日期一组。**默认收起**，只露一行「9月15日（共 2 张）」，点标题（或回车/空格）
+// 才展开当天的卡片 —— 全部展开就是一整条长图，几十条翻不到头。
+// 卡片装在 .schedule-group-body 里（一个没有任何样式的 div）：条目之间靠 margin-top 撑开，
+// 包一层不改外观，只是收起时能整块 hidden。
+function scheduleGroup(day, entries) {
+  const group = document.createElement("section"); group.className = "schedule-group";
+  const heading = document.createElement("h3"); group.append(heading);
+  const body = document.createElement("div"); body.className = "schedule-group-body";
+  entries.forEach((entry) => body.append(scheduleEntry(entry)));
+  body.hidden = true;
+  const paint = () => { heading.textContent = `${body.hidden ? "▸ " : "▾ "}${scheduleLabel(day)}（共 ${entries.length} 张）`; };
+  paint(); group.append(body);
+  heading.setAttribute("role", "button"); heading.setAttribute("tabindex", "0"); heading.setAttribute("aria-expanded", String(!body.hidden));
+  const toggle = () => { body.hidden = !body.hidden; heading.setAttribute("aria-expanded", String(!body.hidden)); paint(); };
+  heading.addEventListener("click", toggle);
+  heading.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
+  return group;
+}
+// 按计划日期分组渲染。**先按节点挑条目、再按日期分组** —— 顺序反了就会又变成「每组都渲染全部日期」。
+// 分出来的实体是「卡片 × 节点」这一对，不是卡片本身：同一张卡在 [1天] 和 [2天] 各有一条，
+// 那是两个不同的日子，本来就该各出现一次。
+function renderSchedule(filter = scheduleFilter) {
+  const list = $("scheduleList"); if (!list) return;
+  scheduleFilter = filter;
+  document.querySelectorAll("[data-schedule-filter]").forEach((button) => button.classList.toggle("active", button.dataset.scheduleFilter === filter));
+  const showAll = filter === "all";
+  const entries = [];
+  scheduleCards.forEach((card) => SCHEDULE_PLAN_DAYS.forEach((days, index) => {
+    if (showAll || String(days) === filter) entries.push({ card, days, index, at: schedulePlanDate(card, days) });
+  }));
+  console.log("复习计划", { 节点: filter, 条目: entries.length });
+  list.replaceChildren();
+  if (!entries.length) {
+    const empty = document.createElement("p"); empty.className = "empty-state";
+    empty.textContent = showAll ? "还没有卡片哦 —— 去「卡片」里新建，或从一次同源发现里把结果存成卡片吧！" : `还没有卡片。新建一张卡，它就会自动排上第 ${SCHEDULE_PLAN_DAYS.join(" / ")} 天的复习计划`;
+    list.append(empty); return;
+  }
+  const groups = new Map();
+  entries.forEach((entry) => { const day = scheduleDayKey(entry.at); if (!groups.has(day)) groups.set(day, []); groups.get(day).push(entry); });
+  [...groups.entries()].sort((a, b) => a[0] - b[0]).forEach(([day, items]) => list.append(scheduleGroup(day, items)));
+}
+// 计划表的数据源。**服务端是卡片内容的权威**：进页面、复习完都重新拉一次，拿它上面的
+// created_at（推算基准）和 review_stage（哪些节点已完成）；本地那份只在请求失败时兜底。
+async function refreshScheduleCards() {
+  const local = allReviewCards();
+  const byId = new Map(local.map((card) => [card.id, card]));
+  scheduleCards = local;
+  try {
+    const response = await authFetch(apiUrl("/api/cards/schedule"), { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!Array.isArray(data.cards)) return;
+    const seen = new Set();
+    const remote = data.cards.map((card) => {
+      seen.add(card.id); const mine = byId.get(card.id);
+      // created_at 是推算基准，服务端不补这个字段（见 card_store.normalize_card），
+      // 所以缺了就从本地那份补回来 —— 补不上还有 scheduleAnchor 里的兜底链。
+      return { ...card, created_at: card.created_at || card.createdAt || mine?.created_at, bookId: mine?.bookId, bookName: mine?.bookName || "知识卡片" };
+    });
+    // 后端没存上的卡（建卡那次 /api/cards/save 失败的）不能在计划表里凭空消失。
+    scheduleCards = [...remote, ...local.filter((card) => !seen.has(card.id) && card.localOnly)];
+  } catch { /* 离线：保留本地那份，页面还能看 */ }
+}
+async function openSchedulePage() {
+  document.querySelectorAll(".fullscreen-page").forEach((page) => { page.hidden = page.id !== "schedulePage"; });
+  document.body.classList.add("schedule-open"); $("schedulePage").hidden = false;
+  scheduleFilter = "1";
+  renderSchedule(scheduleFilter);          // 先用本地快照铺一下，避免白屏
+  await refreshScheduleCards();            // 再用服务端那份覆盖
+  if (!$("schedulePage").hidden) renderSchedule(scheduleFilter);
+}
+function closeSchedulePage() { $("schedulePage").hidden = true; document.body.classList.remove("schedule-open"); }
+// 这里原本还有一个 renderScheduleFuture()，它当年**用 `renderSchedule = renderScheduleFuture`
+// 把上面那个真实现整个覆盖掉**，于是页面上永远只有它那一份。它算日期的思路（建卡日 +1/2/4/7/15）
+// 恰恰就是现在这一版要的东西，之所以删掉又加回来，是因为中间有过一版改成「按 next_review_due
+// 分区」——用户 2026-09-13 明确否掉了那一版，要的就是这张按建卡日推算的计划表。
+//
+// 教训不是「别做投影」，而是**别用覆盖赋值伪造第二份实现**：要么改 renderSchedule()，要么
+// 什么都别做。现在全页只有上面 renderSchedule() 一个入口，两条实现并存的坑不会再出现。
 
 
 
@@ -1603,7 +1774,7 @@ $("saveProfile").addEventListener("click", async () => {
   showToast("资料已保存");
 });
 $("openRulesButton").addEventListener("click", () => $("rulesPage").hidden = false); $("closeRulesButton").addEventListener("click", () => $("rulesPage").hidden = true);
-$("closeScheduleButton").addEventListener("click", () => { $("schedulePage").hidden = true; document.body.classList.remove("schedule-open"); activateAppPage("petPage"); });
+$("closeScheduleButton").addEventListener("click", () => { closeSchedulePage(); activateAppPage("petPage"); });
 document.querySelectorAll("[data-schedule-filter]").forEach((button) => button.addEventListener("click", () => renderSchedule(button.dataset.scheduleFilter)));
 document.querySelector("[data-record-schedule]")?.addEventListener("click", openSchedulePage);
 $("recordNoteReview")?.addEventListener("click", openNoteReviewPage);
