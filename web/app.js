@@ -284,6 +284,19 @@ function showKnowledgeLauncher(panelId) {
 function clearDraftForPanel(panelId) {
   setDraftForPanel(panelId, "");
 }
+function resetZhihuSearchSession() {
+  state.zhihuResearchItems = [];
+  state.researchNoteDraft = null;
+  $("zhihuSearchQuery").value = "";
+  $("zhihuSearchResults").replaceChildren();
+  $("zhihuResearchToolbar").hidden = true;
+  $("zhihuSelectionCount").textContent = "已选 0 条（最多 6 条）";
+  $("useZhihuResearch").disabled = true;
+  $("zhihuSetupHelp").hidden = true;
+  $("zhihuSearchFeedback").textContent = state.zhihuMode === "research"
+    ? "输入一个主题，我会从核心概念、机制原理和争议边界三个角度搜索。"
+    : "例如：负反馈为什么能让系统稳定？结果来自知乎开放平台。";
+}
 async function searchZhihu() {
   const input = $("zhihuSearchQuery"), feedback = $("zhihuSearchFeedback"), results = $("zhihuSearchResults");
   const query = input.value.trim();
@@ -1755,12 +1768,16 @@ document.querySelectorAll("[data-launch-import]").forEach((button) => button.add
   state.importTarget = state.importPanelTarget === "discoverPanel" ? "discoverText" : "explainText";
   openImportSheet("importSheet");
   const panels = { manual: "manualImportPanel", image: "imageImportPanel", zhihu: "zhihuSearchPanel" };
+  if (button.dataset.launchImport === "zhihu") resetZhihuSearchSession();
   showImportPanel(panels[button.dataset.launchImport]);
   if (button.dataset.launchImport === "image") $("imageImportFile").click();
 }));
 document.querySelectorAll(".back-to-launcher").forEach((button) => button.addEventListener("click", () => showKnowledgeLauncher(state.activeKnowledgePanel)));
 $("importSheetClose").addEventListener("click", closeImportSheet);
-document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => showImportPanel(button.dataset.importPanel)));
+document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => {
+  if (button.dataset.importPanel === "zhihuSearchPanel") resetZhihuSearchSession();
+  showImportPanel(button.dataset.importPanel);
+}));
 document.querySelectorAll(".import-back").forEach((button) => button.addEventListener("click", () => showImportPanel(null)));
 $("confirmManualImport").addEventListener("click", () => { const text = $("manualImportText").value.trim(); if (!text) return; placeImportedText(text, "内容已放入输入框", state.importPanelTarget); });
 $("confirmZhihuSearch").addEventListener("click", searchZhihu);
