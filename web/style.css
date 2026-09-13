@@ -103,9 +103,7 @@ body::after {
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: .04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E");
-  background-size: 160px 160px;
+  display: none;
 }
 
 body {
@@ -1613,7 +1611,43 @@ textarea:focus, input:focus, .rich-editor:focus {
     radial-gradient(84% 38% at 70% 90%, rgba(137, 194, 255, .36) 0%, rgba(137, 194, 255, 0) 80%),
     radial-gradient(76% 34% at 6% 92%, rgba(180, 212, 255, .42) 0%, rgba(180, 212, 255, 0) 80%),
     linear-gradient(150deg, #DCEAFC 0%, #E6F0FD 40%, #D6E6FA 100%);
-  filter: blur(46px);
+  /* 径向渐变本身已经柔和；整页 blur 会在滚动时触发昂贵的重绘。 */
+  filter: none;
+}
+
+/* H5 性能模式：小屏设备避免多个 fixed/sticky 层同时做实时背景模糊。 */
+@media (max-width: 600px) {
+  .topbar,
+  .follow-up,
+  .local-loading,
+  .sheet-backdrop,
+  .bottom-sheet,
+  .bottom-nav,
+  .review-actions,
+  .review-manage-toolbar,
+  .rich-toolbar,
+  .batch-toolbar,
+  .fullscreen-page > header,
+  .toast {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  /* 用固定渐变、亮边和阴影模拟磨砂玻璃；没有实时取样，也没有背景动画。 */
+  .topbar,
+  .bottom-sheet,
+  .bottom-nav,
+  .review-manage-toolbar,
+  .batch-toolbar,
+  .fullscreen-page > header {
+    background-image:
+      linear-gradient(135deg, rgba(255,255,255,.72), rgba(235,244,255,.52)),
+      radial-gradient(circle at 86% 8%, rgba(180,212,255,.42), transparent 42%);
+    background-color: rgba(244,249,255,.96);
+    border-color: rgba(255,255,255,.82);
+    box-shadow: 0 10px 28px rgba(46,78,118,.10), inset 0 1px 0 rgba(255,255,255,.94);
+  }
+  .sheet-backdrop { background: rgba(31,52,80,.28); }
+  .toast { background: rgba(31,52,80,.94); }
 }
 
 /* ==========================================================================

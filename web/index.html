@@ -235,6 +235,11 @@
     <label class="cover-picker" for="bookCoverFile"><span id="bookCoverPreview">▤</span><strong>上传封面</strong><small>支持 JPG、PNG 等图片</small></label><input id="bookCoverFile" type="file" accept="image/*" hidden>
     <div class="sheet-actions"><button class="danger-button" id="deleteBookButton" type="button" hidden>删除书本</button><button class="secondary" id="cancelBook" type="button">取消</button><button class="primary" id="saveBookButton" type="button">保存书本</button></div>
   </section>
+  <section class="bottom-sheet delete-confirm global-confirm" id="bookDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="bookDeleteConfirmTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="bookDeleteConfirmTitle">删除书本</h2><button id="closeBookDeleteConfirm" type="button" aria-label="关闭">×</button></div>
+    <p>书中的卡片也会一起删除，且无法恢复。</p>
+    <div class="sheet-actions"><button class="danger-button" id="confirmBookDelete" type="button">确认删除</button><button class="secondary" id="cancelBookDelete" type="button">取消</button></div>
+  </section>
   <section class="bottom-sheet" id="profileSheet" hidden role="dialog" aria-modal="true" aria-labelledby="profileSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="profileSheetTitle">编辑个人资料</h2><button id="profileSheetClose" type="button">×</button></div>
     <label class="avatar-picker" for="profileAvatarFile"><span><img id="profileAvatarPreview" alt=""><svg class="camera-icon" id="profileCameraIcon" viewBox="0 0 32 32" aria-hidden="true"><path d="M10.5 9.5 12 7h8l1.5 2.5H25a3 3 0 0 1 3 3V23a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V12.5a3 3 0 0 1 3-3h3.5Z"/><circle cx="16" cy="17.5" r="5"/></svg></span><strong>上传头像</strong></label><input id="profileAvatarFile" type="file" accept="image/*" hidden>

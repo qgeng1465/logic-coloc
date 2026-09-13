@@ -1757,7 +1757,7 @@ $("historyMemoryMore").addEventListener("click", openHistory);
 $("clearCurrentHistory").addEventListener("click", () => { const type = historyFilterType; saveHistory(getHistory().filter((item) => item.type !== type)); renderHistory(); renderHistoryMemory(); showToast("当前模式历史已清空"); });
 $("backToTop").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
 window.addEventListener("scroll", () => $("backToTop").classList.toggle("visible", window.scrollY > 300), { passive: true });
-$("sheetBackdrop").addEventListener("click", () => { closeMappingSheet(); closeSaveCardSheet(); closeNoteSheet(); closeCardSheet(); closeImportSheet(); closeBookSheet(); closeProfileSheet(); closeSettingsSheet(); closeAboutSheet(); closeNoteActionSheet(); closeFolderActionSheet(); closeTemplateSheet(); closeNoteCreateSheet(); closeFolderSheet(); $("noteMoveSheet").hidden = true; $("batchMoveSheet").hidden = true; $("batchDeleteConfirm").hidden = true; $("cardDeleteConfirm").hidden = true; $("historyDeleteConfirm").hidden = true; $("reviewCardActionSheet").hidden = true; $("reviewDeleteConfirm").hidden = true; });
+$("sheetBackdrop").addEventListener("click", () => { closeMappingSheet(); closeSaveCardSheet(); closeNoteSheet(); closeCardSheet(); closeImportSheet(); closeBookSheet(); closeProfileSheet(); closeSettingsSheet(); closeAboutSheet(); closeNoteActionSheet(); closeFolderActionSheet(); closeTemplateSheet(); closeNoteCreateSheet(); closeFolderSheet(); $("noteMoveSheet").hidden = true; $("batchMoveSheet").hidden = true; $("batchDeleteConfirm").hidden = true; $("cardDeleteConfirm").hidden = true; $("bookDeleteConfirm").hidden = true; $("historyDeleteConfirm").hidden = true; $("reviewCardActionSheet").hidden = true; $("reviewDeleteConfirm").hidden = true; });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeMappingSheet(); closeSaveCardSheet(); } });
 document.querySelectorAll(".bottom-tab").forEach((tab) => tab.addEventListener("click", () => activateAppPage(tab.dataset.appPage)));
 
@@ -1796,7 +1796,10 @@ $("imageImportFile").addEventListener("change", (event) => importImage(event.tar
 $("backToShelf").addEventListener("click", () => { $("bookDetail").hidden = true; $("bookList").hidden = false; $("newBookButton").hidden = false; });
 $("newBookButton").addEventListener("click", () => openBookSheet());
 $("bookSheetClose").addEventListener("click", closeBookSheet); $("cancelBook").addEventListener("click", closeBookSheet);
-$("deleteBookButton").addEventListener("click", () => { if (!editingBookId) return; if (!window.confirm("确定删除这本书吗？书中的卡片也会一起删除。")) return; const books = getBooks().filter((book) => book.id !== editingBookId); localStorage.setItem(storageKeys.books, JSON.stringify(books)); closeBookSheet(); renderBooks(); showToast("书本已删除"); });
+$("deleteBookButton").addEventListener("click", () => { if (!editingBookId) return; $("bookSheet").hidden = true; $("bookDeleteConfirm").hidden = false; });
+$("closeBookDeleteConfirm").addEventListener("click", () => { $("bookDeleteConfirm").hidden = true; $("bookSheet").hidden = false; });
+$("cancelBookDelete").addEventListener("click", () => { $("bookDeleteConfirm").hidden = true; $("bookSheet").hidden = false; });
+$("confirmBookDelete").addEventListener("click", () => { if (!editingBookId) return; const books = getBooks().filter((book) => book.id !== editingBookId); localStorage.setItem(storageKeys.books, JSON.stringify(books)); $("bookDeleteConfirm").hidden = true; closeBookSheet(); renderBooks(); showToast("书本已删除"); });
 $("bookCoverFile").addEventListener("change", async (event) => { pendingBookCoverFile = event.target.files?.[0] || null; if (!pendingBookCoverFile) return; pendingBookCoverUrl = await fileDataUrl(pendingBookCoverFile); $("bookCoverPreview").innerHTML = `<img alt="封面预览">`; $("bookCoverPreview").querySelector("img").src = pendingBookCoverUrl; });
 $("saveBookButton").addEventListener("click", async () => {
   const name = $("bookName").value.trim(); if (!name) return;
