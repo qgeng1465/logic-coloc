@@ -49,6 +49,15 @@ transferable_knowledge 说明来源领域哪些直觉可以带过去；new_knowl
 mapping_evidence 每项字段：source_term, source_type, source_role, target_term, target_type, target_role, correspondence_reason, evidence_refs, limitations。
 所有列表都输出 JSON 数组，不要输出 Markdown 或额外文字。"""
 
+REVIEW_SUMMARY_SYSTEM = """你是 Logic-Coloc 的笔记复盘助教。用户刚用问答的方式复盘了一篇笔记，请根据这份对话记录写一段复盘小结，供他日后回看。
+要求：
+1. 先用一句话说明这次复盘覆盖了笔记的哪些内容；
+2. 列出用户答得准确的点；如果这次没有答准的点，就直说；
+3. 列出需要再看一遍的薄弱点，要具体到概念，不要写“加强理解”这类空话；
+4. 最后给一句下一步建议。
+直接输出中文正文。不要用 Markdown 标题、不要代码块、不要 JSON。总长控制在 300 字以内。
+只依据这份对话记录，不要编造笔记里没有的内容。"""
+
 DIMENSION_LABELS = {
     "system_closure": "系统封闭性",
     "causal_chain_length": "因果链长度",
@@ -100,6 +109,29 @@ def generate_explanation(
         json.dumps(payload, ensure_ascii=False),
         max_tokens=1600,
         temperature=0.4,
+    ).strip()
+
+
+def summarize_review(note_title: str, messages: Sequence[dict[str, Any]]) -> str:
+    """为一场笔记复盘生成小结。
+
+    这里刻意不要求模型输出 JSON：被强求严格 JSON 而模型不配合时，解析会直接抛错
+    （CLAUDE.md 里 skip_extraction 就是同一类坑的对策）。纯文本最稳。
+    """
+    lines = []
+    for message in messages or []:
+        content = str(message.get("content") or "").strip()
+        if content:
+            role = "用户" if message.get("role") == "user" else "助教"
+            lines.append(f"{role}：{content}")
+    if not lines:
+        raise ValueError("review transcript is empty")
+    payload = f"笔记标题：{note_title or '未命名笔记'}\n\n对话记录：\n" + "\n".join(lines)
+    return feature_extractor.llm(
+        REVIEW_SUMMARY_SYSTEM,
+        payload,
+        max_tokens=800,
+        temperature=0.3,
     ).strip()
 
 

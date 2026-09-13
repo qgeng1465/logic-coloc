@@ -14,4 +14,12 @@ Thumbs.db
 # Local H5 note data and user uploads
 data/notes.json
 data/cards.json
+data/review_records.json
 uploads/
+
+# 账号：凭证索引（含密码 hash）、每账号的目录（含资料）、token 签名密钥。
+# 这三样都是本机跑出来的运行时状态，绝不能进版本库。
+# data/corpus/example.jsonl 是语料库，必须留在库里，不要写成整目录忽略。
+data/users.json
+data/users/
+data/.secret_key

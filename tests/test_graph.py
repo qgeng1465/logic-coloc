@@ -181,6 +181,32 @@ def test_session_write_back_uses_tools(monkeypatch: pytest.MonkeyPatch, mocked_e
     assert len(manager.get_session("s1").recent_messages) == 2
 
 
+def test_review_stores_user_message_not_the_injected_prompt(mocked_extract) -> None:
+    """笔记复盘进会话历史的必须是用户原话，不是拼好的导师指令。
+
+    这是「附件全文进提示词」能否成立的前提：历史每轮全量重发
+    （`RECENT_MESSAGE_LIMIT = 10`），而导师指令里塞着整篇笔记和附件全文 —— 存它等于
+    把附件放大成 11 份，6.7 万字的培养方案聊到第六轮就超出上下文。
+    """
+    manager = SessionManager()
+    manager.create_session(session_id="s1", knowledge=KnowledgeContext(source_text="笔记", concept=Concept(name="笔记")))
+    prompt = "你现在是用户的笔记复盘导师。\n笔记原文：\n" + "长" * 5000
+    build_graph(manager).invoke({
+        "session_id": "s1", "user_input": prompt, "skip_extraction": True, "stored_input": "请提出第一个问题",
+    })
+    stored = [m.content for m in manager.get_session("s1").recent_messages]
+    assert stored[0] == "请提出第一个问题"
+    assert all("长" * 10 not in content for content in stored)
+
+
+def test_stored_input_absent_falls_back_to_user_input(mocked_extract) -> None:
+    """不传 stored_input 时行为与改动前逐字一致 —— 普通对话走的就是这条路。"""
+    manager = SessionManager()
+    manager.create_session(session_id="s1", knowledge=KnowledgeContext(source_text="原文", concept=Concept(name="概念")))
+    build_graph(manager).invoke({"session_id": "s1", "user_input": "解释一下"})
+    assert manager.get_session("s1").recent_messages[0].content == "解释一下"
+
+
 def test_extract_failure_returns_explicit_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tools, "extract_features", lambda text: (_ for _ in ()).throw(RuntimeError("failed")))
     result = invoke("解释一下")

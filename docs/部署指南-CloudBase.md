@@ -60,8 +60,17 @@ logic_coloc/
 | `LC_TIMEOUT` | `180` | |
 | `LC_DISCOVER_TIMEOUT` | `240` | discover 接口的内部上限 |
 | `LC_THINKING` | `none` | **不要改**，见下方警告 |
+| `LC_SECRET_KEY` | **一串随机字符，自己生成** | 账号登录态 token 的签名密钥。**强烈建议配**，见下方警告 |
 
 可选（`config.py` 里有默认值，不配也行）：`LC_SAMPLES=3`、`LC_METHOD=cosine`、`LC_THRESHOLD=0.85`、`LC_GAMMA=0.06`。
+
+`LC_SECRET_KEY` 随便给一串够长的随机字符串即可（例如 `python -c "import secrets;print(secrets.token_urlsafe(48))"` 的输出）。
+
+### ⚠️ 关于 `LC_SECRET_KEY`
+
+不配也能跑：容器第一次用到时会自己生成一份存到 `data/.secret_key`。但那个文件住在临时容器里，**每次重新部署都会换一把新密钥，于是所有人被踢回登录页**。配了它，密钥就由平台固定注入，重新部署不影响已登录的人（前提是账号数据本身没丢，见第 7 节第 1 条）。
+
+镜像里**故意不带** `data/.secret_key`：带着等于把一个固定密钥烘进镜像，谁拿到镜像谁就能伪造任意账号的登录态。
 
 ### ⚠️ 两条硬规定
 
@@ -181,6 +190,9 @@ curl -o /dev/null -w "%{http_code}\n" https://你的域名/static/app.js
 | 容器起不来，日志报 `ModuleNotFoundError: logic_coloc` | 包层级错了 | 确认用的是仓库自带的 `Dockerfile` |
 | 上传的附件重启后打不开 | 容器文件系统是临时的 | 见下方「已知限制」 |
 | `/api/ocr` 报 500 | 镜像里没装 `rapidocr_onnxruntime` | 确认 `requirements.txt` 里那行没被删 |
+| 接口全返回 401 | 前端请求没带 token | 确认走的是 `authFetch`；登录页本身打不开的话看下面一条 |
+| 登录/注册成功但刷新后又回到登录页 | 浏览器禁用了 `localStorage`（隐私模式、部分内嵌 WebView） | token 存在 `localStorage` 里，禁用就没法保持登录 |
+| 每次重新部署所有人都要重新登录 | 没配 `LC_SECRET_KEY` | 见第 3 节；不过更要紧的是第 7 节第 1 条 —— 账号数据本身也会一起丢 |
 
 ### 关于前后端同源（推荐）
 
@@ -199,15 +211,21 @@ curl -o /dev/null -w "%{http_code}\n" https://你的域名/static/app.js
    <script>window.LC_API_BASE = "https://你的后端域名";</script>
    ```
 2. 改 `api/__init__.py` 里的 CORS 白名单（现在只有 `localhost:5500` 和 `8080`），把前端域名加进去。
-3. 知道有两个功能会坏：`web/app.js` 里「保存资料」的头像上传用的是写死的相对路径，没走 `apiUrl()`。
+3. 附件和头像的图片必须能直接打开：`/uploads/*` 是**匿名可访问**的（`<img>` 不会带 `Authorization` 头，挂了鉴权整个预览就全裂）。它靠「随机 uid + 随机文件名」保护，和改动前同级。分离部署时这个前缀也要能公网访问。
+4. 所有前端请求都走 `authFetch`（自动补 `Authorization` 头、统一处理 401）。**新加接口时别直接调 `fetch`**，否则会拿到 401 且不跳登录页。
 
 ---
 
 ## 7. 已知限制（提前知道，别当成 bug）
 
-1. **笔记、卡片、上传附件重启就丢。**
-   这些存在容器本地文件（`data/notes.json`、`data/cards.json`、`uploads/`）。容器重启或重新部署会清空，多实例之间也不共享。
-   **演示够用**；要真持久化得改云数据库 + 云存储，那是额外开发量。
+1. **账号和全部数据重启就丢 —— 这是现在最需要注意的一条。**
+   笔记、卡片、复盘记录、头像上传，以及**账号本身**（`data/users.json` + `data/users/<uid>/`），全都存在容器本地文件里。容器重启或重新部署会清空，多实例之间也不共享。
+
+   以前丢的只是数据，重新注册一下还能用；**现在有了账号体系，丢的是账号本身** —— 用户重新打开网站会发现自己「不存在了」，得重新注册，之前的东西也一起没了。
+
+   二选一：
+   - **挂一个持久化卷 / CFS** 到 `/app/logic_coloc/data` 和 `/app/logic_coloc/uploads`（改动最小，本方案直接受益，也让上面那条 `LC_SECRET_KEY` 的收益真正落地）；
+   - 或者接受「演示够用」，但**要在交付时口头说清楚**，别让人以为注册了就存住了。
 
 2. **实例数要固定为 1。**
    会话存在内存里，多实例会导致 `/api/chat` 随机 404。

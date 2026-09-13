@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .routes import router
-from .note_store import UPLOAD_DIR, ensure_storage
+from .user_paths import UPLOAD_DIR
+from .note_store import ensure_storage
 from .service import ServiceError
 
 

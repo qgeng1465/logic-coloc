@@ -19,7 +19,15 @@ venv/
 # （容器里 api/__init__.py 的 ensure_storage() 会自动重建这两个目录）
 data/notes.json
 data/cards.json
+data/review_records.json
+data/users.json
+data/users/
+data/.secret_key
 uploads/
+
+# 刻意不带 data/.secret_key：带着它等于把一个固定密钥烘进镜像，谁拿到镜像谁就能
+# 伪造任意账号的登录态。线上请由平台注入 LC_SECRET_KEY（见 docs/部署指南-CloudBase.md）。
+# 不注入也能跑 —— 容器启动时会自己生成一份 —— 但每次重新部署都会把所有人踢下线。
 
 # 体积大、线上用不到
 docs/

@@ -54,6 +54,8 @@ def _knowledge(state: AgentState, profile: Any, terms: list[str]) -> KnowledgeCo
     return KnowledgeContext(source_text=text, concept=Concept(name=text), logic_profile=profile, key_terms=terms)
 
 def extract_for_workflow(state: AgentState, manager: SessionManager | None = None) -> dict[str, Any]:
+    if state.skip_extraction:
+        return {}
     extraction_text = state.user_input or ""
     if state.intent == Intent.FOLLOW_UP and state.knowledge_context is not None:
         history = "\n".join(message.content for message in state.recent_messages)
@@ -140,7 +142,9 @@ def generate_response(state: AgentState) -> dict[str, Any]:
 
 def save_conversation(state: AgentState, manager: SessionManager | None = None) -> dict[str, Any]:
     if manager and state.session_id and state.final_response:
-        tools.add_session_message(manager, state.session_id, "user", state.user_input or "")
+        # stored_input 优先：笔记复盘的 user_input 里拼着整篇笔记和附件全文，存进历史
+        # 会被「每轮全量重发 × 10 条」放大；它显式传用户原话，历史才不会被撑爆。
+        tools.add_session_message(manager, state.session_id, "user", state.stored_input or state.user_input or "")
         tools.add_session_message(manager, state.session_id, "assistant", state.final_response)
     return {}
 

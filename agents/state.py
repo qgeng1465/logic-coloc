@@ -25,6 +25,14 @@ class AgentState(BaseModel):
 
     session_id: str | None = None
     user_input: str | None = None
+    # 存进会话历史的文本。默认 None = 沿用 user_input（普通对话的行为一字不变）。
+    # 笔记复盘要显式设成用户原话：user_input 里拼着笔记正文和附件全文，而会话历史
+    # 每轮全量重发（上限 10 条），整段塞进去就会被放大成 11 份。
+    stored_input: str | None = None
+    # 笔记复盘这类纯对话轮次：user_input 是导师指令而不是待分析的文本，
+    # 对它做逻辑特征提取会让 LLM 跟着指令回答、不输出 JSON（实测 500），
+    # 且提取结果在 generate_response 里根本用不到，故整轮跳过。
+    skip_extraction: bool = False
     top_k: int = Field(default=3, ge=1, le=5)
     intent: Intent | None = None
     concept: Concept | None = None

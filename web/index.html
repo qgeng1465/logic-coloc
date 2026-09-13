@@ -11,13 +11,13 @@
 <body>
   <div class="app-shell">
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Logic-Coloc 首页">Logic-Coloc</a>
-    <span class="topbar-actions"><button class="history-button" id="historyButton" type="button" aria-label="历史记录">◷</button><span class="status" id="sessionStatus">尚未创建会话</span></span>
+    <a class="topbar-brand" href="/" aria-label="isoLogic 首页"><img src="/static/assets/images/logo.webp" alt="知源"><span>isoLogic</span></a>
+    <button class="profile-topbar" id="editProfileButton" type="button" aria-label="编辑个人资料"><span class="avatar-wrap"><img id="profileAvatar" alt="用户头像"><span class="avatar-fallback" id="avatarFallback">山</span></span><span class="profile-topbar-copy"><strong id="profileNickname">学术萌新</strong><small id="profileSignature">记录每一次深度思考，留给未来的自己。</small></span></button>
+    <span class="topbar-actions"><button class="notification-button" id="notificationButton" type="button" aria-label="查看待复习通知"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="notification-badge" id="notificationBadge" hidden>0</span></button><button class="settings-button" id="settingsButton" type="button" aria-label="设置" hidden>⚙</button></span>
   </header>
 
   <main>
     <section class="intro knowledge-shell" aria-labelledby="pageTitle">
-      <p class="eyebrow">跨学科知识理解工具</p>
       <h1 id="pageTitle">探索它在跨学科领域的逻辑同源</h1>
       <p class="lead" id="pageSubtitle">输入一个概念，看看其他学科里有没有相似的运行机制。</p>
     </section>
@@ -28,7 +28,7 @@
     </nav>
 
     <section class="knowledge-launcher knowledge-shell" id="knowledgeLauncher">
-      <div class="launcher-heading"><p class="eyebrow" id="launcherEyebrow">导入文本寻找跨学科同源</p><h2 id="launcherTitle">导入内容或概念，寻找跨学科同源</h2></div>
+      <div class="launcher-heading"><h2 id="launcherTitle">导入内容或概念，寻找跨学科同源</h2></div>
       <div class="import-options launcher-options">
         <button class="import-option launcher-option" type="button" data-launch-import="link"><span>01</span><strong>从链接导入</strong><small>支持知乎、小红书、抖音等链接</small><b>↗</b></button>
         <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
@@ -118,18 +118,18 @@
     </section>
 
     <section class="app-page library-page" id="cardsPage" hidden>
-      <div class="app-page-head"><div><p class="eyebrow">知识仓库</p><h2>我的书架</h2></div><button class="secondary compact" id="newBookButton" type="button">＋ 新建书本</button></div>
+      <div class="app-page-head"><div><h2>我的书架</h2></div><button class="secondary compact" id="newBookButton" type="button">＋ 新建书本</button></div>
       <div class="book-list" id="bookList"></div>
       <div class="book-detail" id="bookDetail" hidden>
         <button class="back-button" id="backToShelf" type="button">← 返回书架</button>
-        <div class="app-page-head"><div><p class="eyebrow">书内卡片</p><h2 id="bookDetailTitle">知识卡片</h2></div></div>
+        <div class="app-page-head"><div><h2 id="bookDetailTitle">知识卡片</h2></div></div>
         <div class="mini-card-list" id="miniCardList"></div>
         <button class="note-fab" id="newCardButton" type="button" aria-label="新建知识卡片">＋</button>
       </div>
     </section>
     <section class="app-page review-page" id="reviewPage" hidden>
       <button class="return-profile" id="returnToProfile" type="button">← 返回看山</button>
-      <div class="app-page-head"><div><p class="eyebrow">沉浸式复习</p><h2>今日复习</h2></div><span class="points-chip" id="reviewPoints">能量 0</span></div>
+      <div class="app-page-head"><div><h2>今日复习</h2><p class="eyebrow" id="reviewSubtitle">根据艾宾浩斯曲线，帮你科学巩固知识</p></div></div>
       <div class="review-filter-row"><nav class="review-filters" aria-label="复习卡片筛选">
         <button class="review-filter active" type="button" data-review-filter="unmastered">未掌握 <span id="unmasteredCount">0</span></button>
         <button class="review-filter" type="button" data-review-filter="mastered">已掌握 <span id="masteredCount">0</span></button>
@@ -140,35 +140,36 @@
         <div class="flash-stage">
           <button class="flashcard" id="flashcard" type="button" aria-label="复习卡片">
             <span class="flashcard-inner">
-              <span class="flash-face flash-front"><strong id="flashFront">MCP</strong><img class="flash-image" id="flashFrontImage" alt="卡片正面图片" hidden><span class="definition-skeleton" aria-label="释义已遮挡"><i></i><i></i><i></i></span></span>
-              <span class="flash-face flash-back"><small>核心定义</small><strong id="flashBack">Model Context Protocol：让模型以统一方式连接工具与上下文的协议。</strong><img class="flash-image" id="flashBackImage" alt="卡片背面图片" hidden><span class="answer-guide"><b>机制拆解</b><span>连接能力、工具与上下文</span><b>关联扩展</b><span>可继续学习 Client、Server 与 Resource</span></span></span>
+              <span class="flash-face flash-front review-card-content"><strong id="flashFront"></strong><img class="flash-image" id="flashFrontImage" alt="卡片正面图片" hidden><span class="definition-skeleton" aria-label="释义已遮挡"><i></i><i></i><i></i></span></span>
+              <span class="flash-face flash-back review-card-content"><small>核心定义</small><strong id="flashBack"></strong><img class="flash-image" id="flashBackImage" alt="卡片背面图片" hidden><span class="answer-guide"><b>机制拆解</b><span>连接能力、工具与上下文</span><b>关联扩展</b><span>可继续学习 Client、Server 与 Resource</span></span></span>
             </span>
           </button>
-          <div class="review-complete" id="reviewComplete" hidden><div class="review-mascot"><img id="reviewCompleteAvatar" alt="当前用户头像"></div><strong>🎉 今日复习任务完成！真棒！</strong><p id="reviewCompleteText"></p><span class="points-chip" id="pointsChip">能量 0</span><button class="primary" id="viewMasteredAfterReview" type="button">查看已掌握卡片 →</button><button class="secondary" id="returnProfileAfterReview" type="button">返回看山</button></div>
+          <div class="review-complete" id="reviewComplete" hidden><div class="review-mascot"><img id="reviewCompleteAvatar" alt="当前用户头像"></div><strong id="reviewCompleteTitle">🎉 今日复习任务完成！真棒！</strong><p id="reviewCompleteText"></p><span class="points-chip" id="pointsChip">能量 0</span><button class="primary" id="viewMasteredAfterReview" type="button">查看已掌握卡片 →</button><button class="secondary" id="returnProfileAfterReview" type="button">返回看山</button></div>
         </div>
-        <p class="review-hint" id="reviewHint">瞬间想起含义，选「认识」；思考后想起含义，选「模糊」</p>
+        <div class="review-card-footer"><p class="review-hint" id="reviewHint">瞬间想起含义，选「认识」；思考后想起含义，选「模糊」</p>
         <div class="review-actions memory-actions" id="memoryActions" aria-label="记忆判断"><button class="review-grade know" type="button" data-memory-action="know">认识</button><button class="review-grade vague" type="button" data-memory-action="vague">模糊</button><button class="review-grade forgot" type="button" data-memory-action="forgot">忘记了</button></div>
-        <div class="review-actions answer-actions-row" id="answerActions" aria-label="答案判断" hidden><button class="review-grade know" type="button" data-answer-action="next">下一词</button><button class="review-grade forgot" type="button" data-answer-action="wrong">记错了</button></div>
+        <div class="review-actions answer-actions-row" id="answerActions" aria-label="答案判断" hidden><button class="review-grade know" type="button" data-answer-action="next">下一词</button><button class="review-grade forgot" type="button" data-answer-action="wrong">记错了</button></div></div>
       </div>
       <div class="review-library" id="reviewLibrary" hidden><div class="review-card-list" id="reviewCardList"></div></div>
     </section>
     <section class="app-page notes-page" id="notesPage" hidden>
-      <div class="app-page-head notes-head"><div><p class="eyebrow">个人知识流</p><h2 id="notesPageTitle">全部笔记</h2><small class="note-count" id="notesPageCount"></small></div><div class="note-head-actions"><button id="toggleNoteLayout" type="button" aria-label="切换列表或网格">▦</button><button id="focusNoteSearch" type="button" aria-label="搜索">⌕</button><button id="toggleBatchMode" type="button" aria-label="批量管理">⠿</button></div></div>
+      <div class="app-page-head notes-head"><div><h2 id="notesPageTitle">全部笔记</h2></div><div class="note-head-actions"><button id="toggleNoteLayout" type="button" aria-label="切换列表或网格">▦</button><button id="focusNoteSearch" type="button" aria-label="搜索">⌕</button><button id="toggleBatchMode" type="button" aria-label="批量管理">⠿</button></div></div>
       <div class="category-scroll-row"><button class="category-arrow" id="categoriesLeft" type="button" aria-label="向左浏览分类">‹</button><div class="note-categories" id="noteCategories"></div><button class="category-arrow" id="categoriesRight" type="button" aria-label="向右浏览分类">›</button><button class="category-add" id="addNoteCategory" type="button" aria-label="新建分类">＋</button></div>
       <button class="folder-breadcrumb" id="folderBreadcrumb" type="button" hidden>← 返回　<span id="folderBreadcrumbName"></span></button>
       <label class="note-search"><span aria-hidden="true">⌕</span><input id="noteSearch" type="search" placeholder="搜索笔记"><button id="clearNoteSearch" type="button" aria-label="清除搜索" hidden>×</button></label>
       <div class="note-list" id="noteList"></div>
     </section>
     <section class="app-page profile-page" id="petPage" hidden>
-      <button class="profile-identity" id="editProfileButton" type="button"><span class="avatar-wrap"><img id="profileAvatar" alt="用户头像"><span class="avatar-fallback" id="avatarFallback">山</span></span><span><strong id="profileNickname">学术萌新</strong><small id="profileSignature">记录每一次深度思考，留给未来的自己。</small></span><b>›</b></button>
-      <article class="level-card"><div><small id="levelLabel">LV.1 · 学术萌新</small><strong><span id="profilePoints">0</span> 能量</strong></div><button id="openRulesButton" type="button">规则与明细 →</button><div class="level-track"><i id="levelProgress"></i></div><p id="levelRemaining">距离下一级还差 100 能量</p><div class="kanshan-static" aria-label="刘看山静态形象">◉</div></article>
+      <article class="level-card"><div><small id="levelLabel">LV.1 · 学术萌新</small><strong><span id="profilePoints">0</span> <em>能量</em></strong></div><button id="openRulesButton" type="button">规则与明细 →</button><div class="level-track"><i id="levelProgress"></i></div><p id="levelRemaining">距离下一级还差 100 能量</p><div class="kanshan-static" aria-label="刘看山静态形象">◉</div></article>
       <div class="record-heading"><h3>我的记录</h3></div>
-      <div class="record-grid"><button type="button" data-record-filter="mastered"><strong id="recordMastered">0</strong><span>已掌握卡片</span></button><button type="button" data-record-filter="unmastered"><strong id="recordUnmastered">0</strong><span>未掌握卡片</span></button><article><strong id="recordNotes">0</strong><span>笔记数量</span></article><article><strong id="recordDays">1</strong><span>学习天数</span></article></div>
+      <div class="record-grid"><button type="button" data-record-filter="mastered"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><strong id="recordMastered">0</strong><span>已掌握卡片</span><small>已熟练掌握</small></button><button type="button" data-record-filter="unmastered"><div class="record-icon-box" style="background:#FDF4F0;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D98A76" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><strong id="recordUnmastered">0</strong><span>未掌握卡片</span><small>待复习巩固</small></button><article id="recordNoteReview"><div class="record-icon-box" style="background:#F0F6F4;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B9E8F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div><span>笔记复盘</span><small>回看复盘对话</small></article><button type="button" data-record-schedule><div class="record-icon-box" style="background:#F6F2F8;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9887A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div><span>学习日志</span><small>查看复习计划</small></button></div>
+      <article class="kanshan-guide-card"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></div><div><strong>刘看山陪你一起学习</strong><p>刘看山正在后台帮你整理知识库，持续积累每一次深度思考。</p></div></article>
     </section>
   </main>
 
   <div class="local-loading" id="loading" hidden aria-live="polite" aria-label="正在处理">
-    <div class="spinner"></div><span id="loadingText">正在分析…</span>
+    <div class="spinner"></div>
+    <div class="loading-copy"><span id="loadingText">正在分析…</span><span class="loading-timer" id="loadingTimer"></span></div>
   </div>
   <button class="back-to-top" id="backToTop" type="button" aria-label="回到顶部">↑</button>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
@@ -182,11 +183,11 @@
     <div class="sheet-heading"><h2 id="saveCardTitle">存为知识卡片</h2><button id="saveCardSheetClose" type="button" aria-label="关闭存卡面板">×</button></div>
     <div class="save-preview"><span class="input-hint">当前知识</span><strong id="saveCardConcept">尚未生成解释</strong></div>
     <label for="shelfSelect">选择书架</label>
-    <select id="shelfSelect"><option>默认书架</option><option disabled>更多书架将在后续开放</option></select>
-    <p class="input-hint">当前阶段尚未接入卡片存储，确认后不会产生虚假保存记录。</p>
+    <select id="shelfSelect"></select>
+    <p class="input-hint">卡片会存进所选书架，并加入复习计划。</p>
     <p class="save-card-status" id="saveCardStatus" role="status"></p><div class="sheet-actions"><button class="primary" id="confirmSaveCard" type="button">确认存入卡片</button><button class="secondary" id="cancelSaveCard" type="button">取消</button></div>
   </section>
-  <section class="bottom-sheet history-sheet" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="historyTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyTitle">历史记录</h2><button id="historyClose" type="button">×</button></div><div class="history-filter-tabs" role="tablist" aria-label="历史记录类型"><button class="history-filter active" type="button" data-history-type="读懂它" role="tab">读懂它</button><button class="history-filter" type="button" data-history-type="跨学科理解" role="tab">跨学科理解</button></div><div id="historyList"></div><button class="secondary" id="clearHistory" type="button">清空当前模式历史</button></section>
+  <section class="bottom-sheet history-sheet" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="historyTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyTitle">历史记录</h2><button id="historyClose" type="button">×</button></div><div class="history-filter-tabs" role="tablist" aria-label="历史记录类型"><button class="history-filter active" type="button" data-history-type="跨学科理解" role="tab">跨学科理解</button><button class="history-filter" type="button" data-history-type="读懂它" role="tab">读懂它</button></div><div id="historyList"></div><button class="secondary" id="clearHistory" type="button">清空当前模式历史</button></section>
   <section class="bottom-sheet delete-confirm global-confirm" id="historyDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="historyDeleteTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyDeleteTitle">删除历史记录</h2><button id="closeHistoryDelete" type="button">×</button></div><p>删除后无法恢复，确定要删除这条历史记录吗？</p><div class="sheet-actions"><button class="secondary" id="cancelHistoryDelete" type="button">取消</button><button class="danger-button" id="confirmHistoryDelete" type="button">确认删除</button></div></section>
   <section class="bottom-sheet" id="noteSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteSheetTitle">
     <div class="sheet-handle"></div>
@@ -239,8 +240,28 @@
     <label for="profileSignatureInput">签名</label><textarea id="profileSignatureInput" rows="3"></textarea>
     <div class="sheet-actions"><button class="secondary" id="cancelProfile" type="button">取消</button><button class="primary" id="saveProfile" type="button">保存资料</button></div>
   </section>
+  <section class="bottom-sheet settings-sheet" id="settingsSheet" hidden role="dialog" aria-modal="true" aria-labelledby="settingsSheetTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="settingsSheetTitle">设置</h2><button id="settingsSheetClose" type="button" aria-label="关闭设置">×</button></div>
+    <p class="settings-account">当前账号：<strong id="settingsUsername">—</strong></p>
+    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button><button class="sheet-menu-button" id="logoutButton" type="button">退出登录 <span>›</span></button></div>
+  </section>
+  <section class="bottom-sheet about-sheet" id="aboutSheet" hidden role="dialog" aria-modal="true" aria-labelledby="aboutSheetTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="aboutSheetTitle">关于知源</h2><button id="aboutSheetClose" type="button" aria-label="关闭关于知源">×</button></div>
+    <p class="about-copy">知源 isoLogic，你的跨学科知识理解助手。在这里，我们通过逻辑同源发现，帮你用熟悉的知识理解未知，让学习不再枯燥。</p>
+  </section>
   <section class="fullscreen-page" id="rulesPage" hidden aria-labelledby="rulesTitle"><header><button id="closeRulesButton" type="button">← 返回</button><h2 id="rulesTitle">规则与明细</h2></header><div class="rules-body"><article class="level-card compact-level"><small id="rulesLevel">LV.1 · 学术萌新</small><strong><span id="rulesPoints">0</span> 能量</strong><div class="level-track"><i id="rulesProgress"></i></div></article><h3>等级说明</h3><div class="responsive-table" id="levelTable"></div><h3>学习行为与积分</h3><div class="responsive-table" id="pointsTable"></div></div></section>
+  <section class="fullscreen-page schedule-page" id="schedulePage" hidden aria-labelledby="scheduleTitle">
+    <header><button id="closeScheduleButton" type="button">← 返回</button><h2 id="scheduleTitle">复习计划</h2></header>
+    <div class="schedule-body">
+      <article class="schedule-curve-card"><h3>艾宾浩斯记忆曲线</h3><svg class="schedule-curve" viewBox="0 0 360 190" role="img" aria-label="记忆保持率与复习节点曲线"><line x1="42" y1="18" x2="42" y2="158"></line><line x1="42" y1="158" x2="345" y2="158"></line><path d="M42 30 C90 55 92 125 128 132 S164 64 188 112 S224 70 245 105 S278 82 300 98 S326 88 345 94"></path><g class="curve-points"><circle cx="72" cy="78" r="4"></circle><circle cx="112" cy="128" r="4"></circle><circle cx="150" cy="96" r="4"></circle><circle cx="190" cy="111" r="4"></circle><circle cx="235" cy="104" r="4"></circle><circle cx="285" cy="96" r="4"></circle><circle cx="335" cy="94" r="4"></circle></g><text x="44" y="176">1天</text><text x="103" y="176">2天</text><text x="166" y="176">4天</text><text x="228" y="176">7天</text><text x="291" y="176">15天</text></svg><p>复习节点：5分钟 · 30分钟 · 12小时 · 1天 · 2天 · 4天 · 7天 · 15天</p></article>
+      <div class="schedule-filters" role="tablist" aria-label="艾宾浩斯复习阶段筛选"><button type="button" data-schedule-filter="1">1天</button><button type="button" data-schedule-filter="2">2天</button><button type="button" data-schedule-filter="4">4天</button><button type="button" data-schedule-filter="7">7天</button><button type="button" data-schedule-filter="15">15天</button></div>
+      <div id="scheduleList" class="schedule-list"><p class="empty-state">正在加载复习计划…</p></div>
+    </div>
+  </section>
   <section class="fullscreen-page" id="attachmentPreview" hidden><header><button id="closeAttachmentPreview" type="button">← 返回笔记</button><h2 id="attachmentPreviewTitle">附件预览</h2></header><div class="preview-body" id="attachmentPreviewBody"></div></section>
+  <section class="fullscreen-page" id="noteReviewPage" hidden aria-labelledby="noteReviewTitle"><header><button id="closeNoteReview" type="button">← 返回</button><h2 id="noteReviewTitle">笔记复盘</h2><button id="noteReviewHistoryButton" type="button">历史记录</button></header><div class="note-review-body"><div id="noteReviewSelect"><input id="noteReviewSearch" type="search" placeholder="搜索笔记标题"><div id="noteReviewList"></div></div><div id="noteReviewChat" hidden><p id="noteReviewStatus"></p><div id="noteReviewMessages"></div><div class="note-review-input"><textarea id="noteReviewInput" rows="2" placeholder="输入你的回答…"></textarea><button class="primary" id="noteReviewSend" type="button">发送</button></div></div><div id="noteReviewHistory" hidden><div id="noteReviewHistoryList"></div></div><div id="noteReviewRecord" hidden><div class="record-head"><h3 id="reviewRecordTitle"></h3></div><div id="reviewRecordMessages"></div><div id="reviewRecordSummary"></div></div></div></section>
+  <section class="bottom-sheet" id="noteReviewConfirm" hidden role="dialog" aria-modal="true"><div class="sheet-heading"><h2>开始笔记复盘</h2></div><p id="noteReviewConfirmText"></p><div class="sheet-actions"><button class="primary" id="noteReviewStart" type="button">开始复盘</button><button class="secondary" id="noteReviewCancel" type="button">取消</button></div></section>
+  <section class="bottom-sheet" id="noteReviewDeleteConfirm" hidden role="dialog" aria-modal="true"><div class="sheet-heading"><h2>删除复盘记录</h2></div><p id="noteReviewDeleteText"></p><div class="sheet-actions"><button class="danger-button" id="noteReviewDeleteButton" type="button">确认删除</button><button class="secondary" id="noteReviewDeleteCancel" type="button">取消</button></div></section>
   <div class="batch-toolbar" id="batchToolbar" hidden><button id="batchShare" type="button">⌯<span>分享</span></button><button id="batchExport" type="button">⇧<span>导出</span></button><button id="batchMove" type="button">▱<span>移动</span></button><button id="batchDelete" type="button">⌫<span>删除</span></button><button id="batchSelectAll" type="button">☑<span>全选</span></button></div>
   <div class="review-manage-toolbar" id="reviewManageToolbar" hidden><button id="reviewSelectAll" type="button">全选</button><button class="danger-text" id="reviewDeleteSelected" type="button">删除</button><button id="reviewUnmasterSelected" type="button">移出已掌握</button><button id="reviewCancelEdit" type="button">取消</button></div>
   <section class="bottom-sheet" id="reviewCardActionSheet" hidden role="dialog" aria-modal="true"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="reviewActionTitle">管理卡片</h2><button id="closeReviewAction" type="button">×</button></div><button class="sheet-menu-button" id="toggleReviewCardStatus" type="button"></button><button class="sheet-menu-button danger-text" id="deleteReviewCard" type="button">删除此卡片</button></section>
@@ -282,13 +303,44 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <nav class="bottom-nav" aria-label="主功能导航">
-    <button class="bottom-tab" type="button" data-app-page="cardsPage" aria-selected="false"><span aria-hidden="true">▣</span><strong>卡片</strong></button>
-    <button class="bottom-tab" type="button" data-app-page="notesPage" aria-selected="false"><span aria-hidden="true">▤</span><strong>笔记</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="cardsPage" aria-selected="false"><span class="nav-image" aria-hidden="true"><img src="/static/assets/nav/card.png" alt=""></span><strong>卡片</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="notesPage" aria-selected="false"><span class="nav-image" aria-hidden="true"><img src="/static/assets/nav/notes.png" alt=""></span><strong>笔记</strong></button>
     <button class="bottom-tab knowledge-tab active" type="button" data-app-page="knowledge" aria-selected="true"><span aria-hidden="true">⌕</span><strong>求知</strong></button>
-    <button class="bottom-tab" type="button" data-app-page="reviewPage" aria-selected="false"><span aria-hidden="true">◇</span><strong>复习</strong></button>
-    <button class="bottom-tab" type="button" data-app-page="petPage" aria-selected="false"><span aria-hidden="true">◉</span><strong>看山</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="reviewPage" aria-selected="false"><span class="nav-image" aria-hidden="true"><img src="/static/assets/nav/review.png" alt=""></span><strong>复习</strong></button>
+    <button class="bottom-tab" type="button" data-app-page="petPage" aria-selected="false"><span class="nav-image" aria-hidden="true"><img src="/static/assets/nav/kanshan.png" alt=""></span><strong>看山</strong></button>
   </nav>
   </div>
+
+  <!-- 登录 / 注册。**故意放在 .app-shell 外面**：它是覆盖层而不是应用内容，
+       放在 shell 内会继承 shell 的排版；放在外面才能干净地盖住整页。
+       z-index 200 高于全屏页（40）与 toast（50），未登录时它就是唯一可见的一层。 -->
+  <section class="auth-page" id="authPage" hidden aria-labelledby="authTitle">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="/static/assets/images/logo.webp" alt="">
+        <h1 id="authTitle">知源 isoLogic</h1>
+        <p>登录后，笔记、卡片、复习记录和能量都跟着你的账号走。</p>
+      </div>
+
+      <div class="auth-tabs" role="tablist" aria-label="登录或注册">
+        <button class="auth-tab active" id="authLoginTab" type="button" role="tab" aria-selected="true">登录</button>
+        <button class="auth-tab" id="authRegisterTab" type="button" role="tab" aria-selected="false">注册</button>
+      </div>
+
+      <form class="auth-form" id="authForm" novalidate>
+        <label for="authUsername">用户名</label>
+        <input id="authUsername" name="username" type="text" autocomplete="username" maxlength="20" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="2-20 位中英文、数字、下划线">
+        <label for="authPassword">密码</label>
+        <input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="至少 6 位">
+        <p class="error" id="authError" role="alert" hidden></p>
+        <button class="primary auth-submit" id="authSubmit" type="submit">登录</button>
+      </form>
+
+      <p class="auth-hint" id="authHint">还没有账号？点上面的「注册」建一个。</p>
+    </div>
+  </section>
+
   <script src="/static/app.js" defer></script>
 </body>
 </html>
+

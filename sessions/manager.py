@@ -40,6 +40,7 @@ class SessionManager:
         session_id: str | None = None,
         conversation_summary: str = "",
         recent_messages: Sequence[Message] | None = None,
+        owner_id: str = "",
     ) -> Session:
         """Create and store a new Session."""
         resolved_id = session_id or self._new_session_id()
@@ -55,6 +56,7 @@ class SessionManager:
             recent_messages=list(recent_messages or []),
             created_at=now,
             updated_at=now,
+            owner_id=owner_id,
         )
         self._sessions[resolved_id] = self._copy_session(session)
         return self._copy_session(session)

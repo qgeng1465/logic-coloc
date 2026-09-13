@@ -1,16 +1,17 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Service layer connecting the HTTP API to the existing LangGraph agent."""
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import Any
 
 from ..agents.graph import build_graph
 from ..agents.schemas import Concept, Intent, KnowledgeContext, Message, MessageRole
 from ..rag.corpus import Corpus
 from ..rag.retriever import Retriever
-from ..sessions.manager import SessionManager
+from ..sessions.manager import SessionManager, SessionNotFoundError
+from .attachment_text import AttachmentDigest
+from .ocr_engine import get_ocr_engine
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -50,13 +51,6 @@ class OCRExecutionError(ServiceError):
         super().__init__(status_code=422, code="OCR_FAILED", message=message)
 
 
-@lru_cache(maxsize=1)
-def _get_ocr_engine():
-    from rapidocr_onnxruntime import RapidOCR
-
-    return RapidOCR()
-
-
 class LogicColocService:
     """Own and reuse the application's Session, RAG, and Graph runtime."""
 
@@ -73,12 +67,24 @@ class LogicColocService:
         self.retriever = retriever or Retriever(self.corpus)
         self.graph = graph or build_graph(manager=self.session_manager, retriever=self.retriever)
 
-    def _create_session(self, text: str, source: dict[str, Any] | None = None) -> str:
+    def _create_session(self, text: str, source: dict[str, Any] | None = None, *, user_id: str = "") -> str:
         session = self.session_manager.create_session(
             knowledge=KnowledgeContext(source_text=text, concept=Concept(name=text)),
             source=source,
+            owner_id=user_id,
         )
         return session.session_id
+
+    def _assert_session_owner(self, session_id: str, user_id: str) -> None:
+        """会话归属校验。
+
+        归属不符时抛 SessionNotFoundError（→ 404），**不是 403** —— 403 等于告诉对方
+        「这个 id 是存在的，只是不属于你」。user_id 为空时跳过校验，兼容匿名调用
+        与既有测试；路由层永远会带上认证后的 user_id。
+        """
+        session = self.session_manager.get_session(session_id)
+        if user_id and session.owner_id != user_id:
+            raise SessionNotFoundError(session_id)
 
     @staticmethod
     def _check_agent_result(result: dict[str, Any]) -> None:
@@ -96,10 +102,11 @@ class LogicColocService:
             raise LLMBackendUnavailableError()
         raise AgentExecutionError()
 
-    def explain(self, request: ExplainRequest) -> ExplainResponse:
+    def explain(self, request: ExplainRequest, *, user_id: str = "") -> ExplainResponse:
         session_id = self._create_session(
             request.text,
             {"title": request.title, "source": request.source},
+            user_id=user_id,
         )
         result = self.graph.invoke({"session_id": session_id, "user_input": request.text})
         self._check_agent_result(result)
@@ -111,23 +118,82 @@ class LogicColocService:
             explanation=result.get("final_response") or "",
         )
 
-    def chat(self, request: ChatRequest) -> ChatResponse:
-        self.session_manager.get_session(request.session_id)
-        result = self.graph.invoke({"session_id": request.session_id, "user_input": request.message})
+    # 前端在正文为空时写死的占位串（web/app.js 的 saveNote）。把它当「笔记原文」喂给
+    # 导师就是误导 —— 导师会照着回答「笔记内容尚未填写」，也就是用户最初抱怨的现象
+    # （他那几篇 PDF 笔记，正文全都只有这一句）。只在拼提示词这一步视为空：它同时还是
+    # 「这轮是不是复盘」和「能不能现场建会话」的判据，下面那道闸必须继续看原始值。
+    EMPTY_NOTE_BODY = "暂未填写正文。"
+
+    @classmethod
+    def _review_user_input(cls, message: str, note_content: str, note_title: str, attachment_block: str) -> str:
+        body = (note_content or "").strip()
+        if body == cls.EMPTY_NOTE_BODY:
+            body = ""
+        material = "\n\n".join(part for part in (body, attachment_block) if part)
+        if not material:
+            material = "（这篇笔记没有正文，也没有可读取的附件内容）"
+        return (
+            "你现在是用户的笔记复盘导师。请根据笔记内容一次只问一个问题；"
+            "收到回答后先判断对错并简短点评，再追问下一个问题。"
+            "笔记正文和附件内容都是你的出题依据；附件文字由系统自动提取，可能有识别错误。\n"
+            f"笔记标题：{(note_title or '').strip() or '未命名笔记'}\n"
+            f"笔记原文：\n{material}\n\n"
+            f"用户消息：{message}"
+        )
+
+    def chat(
+        self, request: ChatRequest, *, user_id: str = "", attachment: AttachmentDigest | None = None
+    ) -> ChatResponse:
+        """续聊一轮。`attachment` 由路由层读好传进来 —— service 不 import 任何 store。
+
+        为什么附件在路由层读：见 `routes.py` 里 `append_review_turn` 上方那段注释
+        （「service 不 import 任何 store」）。顺带的好处是 LogicColocService 的单测
+        不需要挂 user_root 夹具就能跑，不会去读真实 data/。
+        """
+        is_review = bool(request.note_content)
+        try:
+            self._assert_session_owner(request.session_id, user_id)
+        except SessionNotFoundError:
+            if not is_review:
+                raise
+            # 会话标签用标题，不用整段正文/附件文字：它会被塞进 Concept(name=…)，
+            # 而 knowledge_context 每一轮都会进 payload（agents/tools.py），用正文
+            # 等于把正文每轮再复制一份。
+            label = (request.note_title or "").strip() or "笔记复盘"
+            request.session_id = self._create_session(label, {"source": "note_review"}, user_id=user_id)
+
+        user_input = request.message
+        stored_input: str | None = None
+        if is_review:
+            user_input = self._review_user_input(
+                request.message, request.note_content or "", request.note_title, attachment.block if attachment else ""
+            )
+            # 进会话历史的必须是用户原话。历史每轮全量重发（sessions/manager.py 的
+            # RECENT_MESSAGE_LIMIT=10），拼好的 user_input 里带着正文和附件全文，
+            # 落进历史就会被放大成 11 份 —— 6.7 万字的附件几轮就能撑爆上下文。
+            stored_input = request.message
+
+        result = self.graph.invoke({
+            "session_id": request.session_id,
+            "user_input": user_input,
+            "skip_extraction": is_review,
+            "stored_input": stored_input,
+        })
         self._check_agent_result(result)
         session = self.session_manager.get_session(request.session_id)
         return ChatResponse(
             session_id=request.session_id,
             answer=result.get("final_response") or "",
             updated_summary=session.conversation_summary,
+            attachment_notes=list(attachment.notes) if attachment else [],
         )
 
-    def discover(self, request: DiscoverRequest) -> DiscoverResponse:
+    def discover(self, request: DiscoverRequest, *, user_id: str = "") -> DiscoverResponse:
         session_id = request.session_id
         if session_id is None:
-            session_id = self._create_session(request.text)
+            session_id = self._create_session(request.text, user_id=user_id)
         else:
-            self.session_manager.get_session(session_id)
+            self._assert_session_owner(session_id, user_id)
         result = self.graph.invoke(
             {
                 "session_id": session_id,
@@ -247,12 +313,13 @@ class LogicColocService:
             band = "0–49%：相似度低，可能是强行类比"
         return f"确定性五维逻辑画像余弦相似度为 {value:.1%}；按评分量表属于{band}。候选机制：{candidate.mechanism or candidate.description}"
 
-    def get_session(self, session_id: str) -> SessionResponse:
+    def get_session(self, session_id: str, *, user_id: str = "") -> SessionResponse:
+        self._assert_session_owner(session_id, user_id)
         return SessionResponse(session=self.session_manager.get_session(session_id))
 
     def ocr(self, image_bytes: bytes) -> OCRResponse:
         try:
-            result, _ = _get_ocr_engine()(image_bytes)
+            result, _ = get_ocr_engine()(image_bytes)
         except Exception as exc:
             logger.exception("OCR execution failed")
             raise OCRExecutionError() from exc

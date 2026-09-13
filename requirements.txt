@@ -13,6 +13,10 @@ requests==2.32.3
 # 若演示不需要「上传截图识字」这个功能，删掉这一行可以大幅瘦身。
 rapidocr_onnxruntime==1.2.3
 
+# PDF 文字提取（笔记复盘要读 PDF 附件，见 api/attachment_text.py）。纯 Python、
+# 无 native 依赖，体积和冷启动影响可忽略。注意：只能取 PDF 的文字层，扫描件取不到。
+pypdf==6.18.1
+
 # 说明：
 # - matplotlib 只在 make_figures.py / plots.py 里用（离线出图），线上不需要，故意不列。
 # - pytest 只在跑测试时需要，线上不需要，故意不列。

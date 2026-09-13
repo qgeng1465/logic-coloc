@@ -118,6 +118,10 @@ class Session(BaseModel):
     recent_messages: list[Message] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # 会话归属的账号。默认空串是为了兼容既有测试与匿名调用；路由层永远会填。
+    # 会话 id 是 uuid4，本身不可猜，但"知道 id 就能读"会让按账号隔离的落盘文件
+    # 之外多出一条旁路，所以 /api/chat 与 /api/session/{id} 会校验它。
+    owner_id: str = ""
 
 
 class Intent(str, Enum):

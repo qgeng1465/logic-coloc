@@ -43,3 +43,9 @@ SAMPLES  = int(os.environ.get("LC_SAMPLES", "3"))            # LLM 采样次数�
 METHOD   = os.environ.get("LC_METHOD", "cosine")             # cosine | wasserstein
 THRESHOLD = float(os.environ.get("LC_THRESHOLD", "0.85"))    # 触发实体映射的阈值
 GAMMA_W1  = float(os.environ.get("LC_GAMMA", "0.06"))        # W1 副视角指数系数
+
+# 账号登录态 token 的 HMAC 签名密钥。
+# 留空则首次使用时自动生成一份存到 data/.secret_key —— 本地开发开箱即用，重启后
+# 已登录的人也不用重新登。但容器重建会连这个文件一起丢掉，**线上应当由平台注入一个
+# 固定值**，否则每次重新部署所有人都会被踢回登录页。见 docs/部署指南-CloudBase.md。
+SECRET_KEY = os.environ.get("LC_SECRET_KEY", "")
