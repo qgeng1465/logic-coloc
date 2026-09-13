@@ -54,9 +54,16 @@ cp .env.example .env      # Windows: copy .env.example .env
 >
 > `.env` 已被 `.gitignore` 排除，**永远不要提交它**；线上由平台环境变量注入。
 
-`LC_BRIDGE` 那几行**不要改**，特别是不要加 `/v1` 或尾斜杠 —— 代码靠域名后缀判断
-该说 OpenAI 方言还是 Anthropic 方言，网址写法一变就会**静默**走错协议，
-表现为「模型返回空内容」且报错完全指不到原因。
+`LC_BRIDGE` 和 `LC_API_KEY` 是要逐字盯的**两个**条件 —— `feature_extractor.py:55` 判定
+该说 OpenAI 方言还是 Anthropic 方言时，要求**同时**满足：`LC_BRIDGE` 去掉尾斜杠后以
+`api.openai-next.com` 结尾，**且** `LC_API_KEY` 以 `sk-` 开头。两个都满足才走
+`POST {LC_BRIDGE}/v1/chat/completions`，否则一律走 `POST {LC_BRIDGE}/v1/messages`。
+
+判定失败**不报错**，只会静默换协议，表现为「模型有响应但内容为空」：
+
+- `LC_BRIDGE` 加了 `/v1`、或换成别的域名 → 后缀匹配不上
+  （**尾斜杠本身没关系**，代码里有 `rstrip("/")` 兜着）
+- `LC_API_KEY` 不以 `sk-` 开头 → 即使域名写对了也走错协议，**这条最容易漏**
 
 ### 4. 启动 —— ⚠️ 必须在**上一级**目录执行
 
@@ -169,7 +176,7 @@ curl -s -H "Authorization: Bearer <你的 token>" \
 | 启动即崩，报 `Form data requires "python-multipart"` | 依赖没装全：`pip install -r requirements.txt` 里已有它，别单装 `fastapi`。它不是可选功能，缺了**应用起不来** |
 | 怎么改代码都没反应 / 接口字段还是旧的 | `--reload-dir` 没写绝对路径而静默失效，或服务是改动之前启动的；直接重启 |
 | 所有 AI 功能返回 503 `LLM_BACKEND_UNAVAILABLE` | `.env` 没配或 `LC_API_KEY` 无效；线上检查平台环境变量 |
-| 模型有响应但内容是空的 | `LC_BRIDGE` 写法被改了（加了 `/v1`、尾斜杠或换了域名），静默走错协议 |
+| 模型有响应但内容是空的 | 协议判定没通过、静默走了另一边。两个条件要**同时**满足：`LC_BRIDGE` 去掉尾斜杠后以 `api.openai-next.com` 结尾、**且** `LC_API_KEY` 以 `sk-` 开头（见第一节第 3 步） |
 | 传图片报错「模型服务暂时不可用」 | 容器缺 OpenCV 的系统库（Dockerfile 已装 `libgl1` + glib）；本地则看 `pip install -r requirements.txt` 是否完整 |
 | `/api/chat` 报 session not found | 多实例部署，或用了云函数 —— 实例数必须固定为 1 |
 | 重新部署后「我的账号不存在了」 | 没挂持久化卷（见第三节第 3 条） |
