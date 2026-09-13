@@ -128,22 +128,36 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 | 变量 | 值 | 说明 |
 |---|---|---|
-| `LC_API_KEY` | 真实密钥 | 只有这一条需要保密 |
+| `LC_API_KEY` | 真实密钥 | 只有这一条需要保密。**必须以 `sk-` 开头**，见下方硬规定 |
 | `LC_BRIDGE` | `https://api.openai-next.com` | **必须一字不差**，见下方硬规定 |
 | `LC_MODEL` | `gpt-4o-mini` | 模型名，别改 |
 | `LC_TIMEOUT` | `180` | 单次模型调用超时（秒） |
 | `LC_DISCOVER_TIMEOUT` | `240` | `discover` 接口的内部上限，必须小于平台的请求超时（300） |
+| `LC_REVIEW_SUMMARY_TIMEOUT` | `60` | 复盘总结的超时（秒）。不填就用这个默认值 |
 | `LC_THINKING` | `none` | **不要改**，见下方硬规定 |
 | `LC_SECRET_KEY` | 随机串 | 身份签名密钥，不配的后果见下 |
 | `LC_MAX_GUESTS` | 不填（默认 2000） | 匿名身份上限，演示场景够用 |
 
 可选、有默认值、可以不填：`LC_SAMPLES=3`、`LC_METHOD=cosine`、`LC_THRESHOLD=0.85`、`LC_GAMMA=0.06`。
 
-### ⚠️ 硬规定一：`LC_BRIDGE` 必须一字不差地填 `https://api.openai-next.com`
+### ⚠️ 硬规定一：`LC_BRIDGE` 和 `LC_API_KEY` 是**两个**条件，一起决定说哪种协议
 
-不要加 `/v1`，不要加结尾斜杠，不要换成别的域名（哪怕那个域名指向同一个服务）。
+代码在 `feature_extractor.py` 的 `llm()` 里这样判定要不要走 OpenAI 方言：
 
-原因：代码里是靠**域名后缀**判断该说 OpenAI 协议还是 Anthropic 协议的。写法一变，就会**静默**走错协议，表现为「模型返回空内容」，而报错信息**完全不会提示是这个原因** —— 这是最费时间的一个坑。
+```python
+config.BRIDGE.rstrip("/").endswith("api.openai-next.com")  and  config.API_KEY.startswith("sk-")
+```
+
+两个条件**都**成立才走 OpenAI 方言（`POST {LC_BRIDGE}/v1/chat/completions`），否则一律走 Anthropic 方言（`POST {LC_BRIDGE}/v1/messages`）：
+
+| 写法 | 结果 |
+|---|---|
+| `https://api.openai-next.com` + `sk-` 开头的 key | ✅ 走 OpenAI 方言 |
+| 加了 `/v1`，或换成别的域名 | ❌ `endswith` 不成立 → 静默走 Anthropic 方言 |
+| 域名写对了，但 key **不以 `sk-` 开头** | ❌ 一样静默走错协议（**这条最容易漏**） |
+| 结尾多个斜杠 | ✅ 安全 —— 代码里有 `.rstrip("/")` 兜着（早前「不要加尾斜杠」的说法过重） |
+
+判定失败**不会报错**，只会静默换协议，表现为「模型返回空内容」，而报错信息**完全不会提示是这个原因** —— 这是最费时间的一个坑。
 
 ### ⚠️ 硬规定二：`LC_THINKING` 保持 `none`
 
@@ -249,7 +263,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer 上面那个t
 | 页面一片空白 / 资源 404 | 前端没和后端同源 | 用容器自带的域名访问（同源），不要自己再拼一个静态托管 |
 | 提示「模型服务未连接」 | ① `LC_API_KEY` 没配或配错 ② 容器出网被限 | 先 `curl /api/health` 看 `detail` 字段 |
 | 「发现同源」转很久然后报「模型服务异常」 | 平台请求超时小于 240 秒 | 把请求超时调到 **≥300 秒** |
-| 「发现同源」返回空内容 / 报错信息很奇怪 | **`LC_BRIDGE` 写得不一样** | 改回 `https://api.openai-next.com`，一字不差 |
+| 「发现同源」返回空内容 / 报错信息很奇怪 | `LC_BRIDGE` 写法不对，**或** `LC_API_KEY` 不以 `sk-` 开头 | 见第 4 节「硬规定一」，两个条件都要满足 |
 | `/api/chat` 报 session not found | 用了云函数，或者多实例部署 | 换云托管，并把实例数固定为 1 |
 | **打开网站看到一层「无法连接服务器 / 刷新重试」** | 匿名身份没建出来（断网或后端没起来），前端才盖这一层 | 先 `curl -X POST /api/auth/guest` 看有没有 `token`；没有就是后端的问题，**不是前端坏了** |
 | 点「刷新重试」后还是那一层 | 后端仍然连不上 | 回头做第 6 节第 1 步；`/api/health` 通了这一层自然会消失 |
