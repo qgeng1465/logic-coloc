@@ -365,7 +365,12 @@ async function importImage(file) {
 
 function renderRichText(element, content) {
   const escape = (value) => value.replace(/[&<>"']/g, (char) => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[char]));
-  const lines = String(content || "").replace(/```(?:markdown|text)?/gi, "").replace(/```/g, "").split(/\r?\n/);
+  // 模型偶尔会把中文编号标题连在上一段后面（“……。二、核心概念”），
+  // 先补换行，再按 Markdown/中文标题渲染，避免整篇笔记挤成一大段。
+  const normalized = String(content || "").replace(/```(?:markdown|text)?/gi, "").replace(/```/g, "")
+    .replace(/\s+(?=(?:一|二|三|四|五|六|七|八|九|十)[、.．])/g, "\n")
+    .replace(/([。！？；])\s*(?=(?:一|二|三|四|五|六|七|八|九|十)[、.．])/g, "$1\n");
+  const lines = normalized.split(/\r?\n/);
   const html = [];
   let listOpen = null;
   const closeList = () => { if (listOpen) { html.push(`</${listOpen}>`); listOpen = null; } };
@@ -373,7 +378,11 @@ function renderRichText(element, content) {
     const line = rawLine.trim();
     if (!line || /^[-*_]{3,}$/.test(line)) { closeList(); return; }
     const inline = escape(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/__(.+?)__/g, "<strong>$1</strong>");
-    if (/^#{1,3}\s+/.test(line)) { closeList(); html.push(`<h3>${inline.replace(/^#{1,3}\s+/, "")}</h3>`); return; }
+    if (/^#{1,3}\s+/.test(line) || /^(?:一|二|三|四|五|六|七|八|九|十)[、.．]\s*/.test(line)) {
+      closeList();
+      const heading = inline.replace(/^#{1,3}\s+/, "");
+      html.push(`<h3>${heading}</h3>`); return;
+    }
     const unordered = /^[-*•]\s+/.test(line), ordered = /^\d+[.)]\s+/.test(line);
     if (unordered || ordered) {
       const kind = ordered ? "ol" : "ul";

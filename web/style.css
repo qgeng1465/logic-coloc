@@ -802,6 +802,8 @@ body.auth-open { overflow: hidden; }
 .zhihu-note-heading h4 { flex:1; }
 .zhihu-research-note-content h3 { margin: 14px 0 6px; font-size: 18px; color: var(--brand-800); }
 .zhihu-research-note-content ul, .zhihu-research-note-content ol { margin: 6px 0 12px 22px; padding: 0; }
+#noteBody h3 { margin: 16px 0 8px; color: var(--brand-800); font-size: 19px; line-height: 1.45; }
+#noteBody ul, #noteBody ol { margin: 8px 0 14px 24px; }
 .zhihu-library-card { position: relative; cursor: pointer; }
 .zhihu-library-card:focus-visible { outline: 3px solid var(--brand-500); outline-offset: 3px; }
 .zhihu-library-card small { display:block; margin-top:4px; color:var(--muted); }
