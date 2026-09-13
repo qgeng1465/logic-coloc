@@ -5,6 +5,9 @@
 // 所有请求都经 apiUrl() 拼地址，且都必须走 authFetch（它会补 Authorization 头并
 // 统一处理 401）——直接调 fetch 会拿到一串 401 且不跳登录页。
 const API_BASE = window.LC_API_BASE || "";
+// 黑客松演示模式：核心体验即插即用，不把笔记、头像、历史写入服务器。
+// 关闭页面后数据自然消失；正式产品再将它切换为 false 并启用持久化。
+const DEMO_MODE = true;
 const apiUrl = (path) => `${API_BASE}${path}`;
 let dueEndpointUnavailable = false;
 const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
@@ -983,7 +986,7 @@ function saveBook(book) { const books = getBooks(); const index = books.findInde
 function getNotes() { const notes = readStore(storageKeys.notes, []), seen = new Set(); let changed = false; notes.forEach((note) => { note.attachments = (note.attachments || []).filter((file) => { const key = file.id || file.url || `${file.name}:${file.size}`; const owner = file.noteId || note.id; if (owner !== note.id || seen.has(key)) { changed = true; return false; } if (!file.noteId) { file.noteId = note.id; changed = true; } seen.add(key); return true; }); }); if (!localStorage.getItem(storageKeys.notes) || changed) localStorage.setItem(storageKeys.notes, JSON.stringify(notes)); return notes.sort((a, b) => new Date(b.date) - new Date(a.date)); }
 function saveNote(note) { const notes = getNotes(); const index = notes.findIndex((item) => item.id === note.id); if (index >= 0) notes[index] = note; else notes.unshift(note); localStorage.setItem(storageKeys.notes, JSON.stringify(notes)); return note; }
 function deleteNote(noteId) { localStorage.setItem(storageKeys.notes, JSON.stringify(getNotes().filter((item) => item.id !== noteId))); }
-async function hydrateNotesFromServer() { try { const response = await authFetch(apiUrl("/api/notes")); if (!response.ok) return; const data = await response.json(); if (Array.isArray(data.notes) && data.notes.length) { const merged = new Map(getNotes().map((note) => [note.id, note])); data.notes.forEach((note) => merged.set(note.id, note)); localStorage.setItem(storageKeys.notes, JSON.stringify([...merged.values()])); } } catch { /* Offline mode keeps local data. */ } renderNotes($("noteSearch")?.value || ""); }
+async function hydrateNotesFromServer() { if (DEMO_MODE) { renderNotes($("noteSearch")?.value || ""); return; } try { const response = await authFetch(apiUrl("/api/notes")); if (!response.ok) return; const data = await response.json(); if (Array.isArray(data.notes) && data.notes.length) { const merged = new Map(getNotes().map((note) => [note.id, note])); data.notes.forEach((note) => merged.set(note.id, note)); localStorage.setItem(storageKeys.notes, JSON.stringify([...merged.values()])); } } catch { /* Offline mode keeps local data. */ } renderNotes($("noteSearch")?.value || ""); }
 function migrateRootNotes() { const notes = readStore(storageKeys.notes, []); let changed = false; notes.forEach((note) => { if (note.folderId === "default" || note.categoryId === "default") { note.folderId = null; delete note.categoryId; changed = true; } }); if (changed) localStorage.setItem(storageKeys.notes, JSON.stringify(notes)); }
 function getCategories() { const items = readStore(storageKeys.categories, []).filter((folder) => folder.id !== "default"); let changed = !localStorage.getItem(storageKeys.categories); items.forEach((folder) => { if (!("coverUrl" in folder)) { folder.coverUrl = ""; changed = true; } if (!("syncStatus" in folder)) { folder.syncStatus = folder.coverUrl?.startsWith("blob:") || folder.coverUrl?.startsWith("data:") ? "local" : "default"; changed = true; } }); if (changed || readStore(storageKeys.categories, []).some((folder) => folder.id === "default")) localStorage.setItem(storageKeys.categories, JSON.stringify(items)); migrateRootNotes(); return items; }
 function saveCategories(folders) { localStorage.setItem(storageKeys.categories, JSON.stringify(folders)); pushLibrary({ categories: folders }); }
@@ -1000,6 +1003,7 @@ function saveCategories(folders) { localStorage.setItem(storageKeys.categories, 
 let libraryPushTimer = null, libraryPushPending = {}, libraryPushFailures = 0;
 
 function pushLibrary(partial) {
+  if (DEMO_MODE) return;
   Object.assign(libraryPushPending, partial);
   libraryPushFailures = 0;   // 用户又动手了，重试预算重置
   window.clearTimeout(libraryPushTimer);
@@ -1842,7 +1846,7 @@ $("saveNote").addEventListener("click", async () => {
   const title = $("noteTitle").value.trim(), body = $("noteBody").innerHTML.trim();
   if (!title && !body) return;
   const existing = getNotes().find((item) => item.id === editingNoteId); const attachments = pendingAttachments.filter((file) => file.noteId === editingNoteId).map((file) => ({ ...file, noteId: editingNoteId })); const note = { id: editingNoteId, folderId: $("noteCategorySelect").value, title: title || "未命名笔记", content: body || NOTE_EMPTY_BODY, coverUrl: pendingNoteCoverUrl, date: new Date().toISOString(), attachments, template: clone(pendingNoteTemplate), starred: existing?.starred || false, syncStatus: "local" }; saveNote(note); saveAttachmentDrafts(); if (!existing) addPoints(10, "新建笔记");
-  try { const response = await authFetch(apiUrl("/api/notes/save"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...note, syncStatus: "synced" }) }); if (!response.ok) throw new Error(); note.syncStatus = "synced"; saveNote(note); showToast("笔记已同步云端"); } catch { showToast("后端暂未连通，已保存在本机浏览器中。"); }
+  if (DEMO_MODE) { showToast("演示笔记已保存（刷新页面后自动清空）"); } else { try { const response = await authFetch(apiUrl("/api/notes/save"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...note, syncStatus: "synced" }) }); if (!response.ok) throw new Error(); note.syncStatus = "synced"; saveNote(note); showToast("笔记已同步云端"); } catch { showToast("后端暂未连通，已保存在本机浏览器中。"); } }
   renderNotes($("noteSearch").value); renderProfile(); closeNoteSheet();
 });
 $("noteAttachmentFile").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (!file) return; await addImportedAttachment(file); event.target.value = ""; }); // TODO: replace /api/upload and blob: URLs with permanent server URLs when storage API is ready.
@@ -1958,6 +1962,9 @@ new MutationObserver(syncHistoryBack).observe($("explainResult"), { attributes: 
    注意 bootApp() 现在只有 initAuth() 一个调用点 —— 必须等身份就位再跑，否则
    那些请求全是匿名 401。 */
 async function bootApp() {
+  if (DEMO_MODE) {
+    [storageKeys.books, storageKeys.notes, storageKeys.categories, storageKeys.explainHistory, storageKeys.discoverHistory, storageKeys.researchHistory].forEach((key) => localStorage.removeItem(key));
+  }
   renderBooks();
   renderCategories();
   renderNotes();
