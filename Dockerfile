@@ -11,10 +11,17 @@ ENV PYTHONUNBUFFERED=1 \
 # 只在跑 OCR 时才触发（/api/ocr 与复盘时的图片附件），所以症状是「应用活着、
 # 但传图片必失败」——不容易第一时间联想到缺系统库，必须在这里装上。
 # 来源：rapidocr_onnxruntime 声明依赖 opencv-python（非 headless 版，链 libGL）。
-# 若将来仍报缺库，按报错名补 apt 包（常见还有 libsm6 / libxext6 / libxrender1）。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+#
+# ⚠️ glib 的包名在 Debian 13 (trixie) 改过：time_t 转换把 libglib2.0-0 改名成了
+# libglib2.0-0t64，**旧名字在 trixie 里不存在**。而 python:3.11-slim 这个浮动 tag
+# 现在指向的正是 trixie，写死旧名字会直接构建失败（报 "Unable to locate package"）。
+# 这里两个名字都试一遍，base 镜像将来再换 Debian 版本也不会坏。
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends libgl1; \
+    apt-get install -y --no-install-recommends libglib2.0-0t64 \
+        || apt-get install -y --no-install-recommends libglib2.0-0; \
+    rm -rf /var/lib/apt/lists/*
 
 # 依赖单独一层：以后只改业务代码时不会重装依赖，构建快很多。
 COPY requirements.txt /tmp/requirements.txt

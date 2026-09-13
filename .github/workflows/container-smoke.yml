@@ -1,15 +1,20 @@
 # 容器冒烟测试：在 GitHub 的真 Linux 机器上构建镜像、启动容器、走一遍真实用户流程。
 #
 # 为什么需要它：本地开发在 Windows 上，而线上是 python:3.11-slim 的 Linux 容器。
-# 有一类问题只在容器里出现（例如缺 libGL 导致 opencv 装不上/import 不了），
-# 在本地是永远测不出来的 —— 等云托管平台部署时才发现，代价就大了。
+# 有一类问题只在容器里出现（例如 Debian 13 把 glib 包改名成 libglib2.0-0t64，
+# 或缺 libGL 导致 opencv 装不上），在本地是永远测不出来的 —— 等云托管平台部署时
+# 才发现，代价就大了。它已经真的逮到过一次构建失败。
 #
 # 这里等价于云托管平台的构建步骤：docker build 用的就是仓库根的 Dockerfile。
-# 每次 push 到 main 会自动跑一遍；也可以在 Actions 页面手动触发（workflow_dispatch）。
+# 每次 push 到 main 会自动跑；也可以在 Actions 页面手动触发（workflow_dispatch）。
 #
 # ⚠️ 唯一验不了的是「真调大模型」：CI 里不配 LC_API_KEY（密钥绝不能进仓库）。
 #    所以这里只确认「没有 key 时服务体面降级」，不确认 LLM 连通性 —— 那要靠平台上的
 #    环境变量，见 docs/部署指南-CloudBase.md。
+#
+# 关于失败信息：Actions 的详细日志需要登录才能看，所以每个失败点都额外输出一条
+# `::error::` 注解（把关键输出截一段塞进去）。注解是公开可读的，没登录也能查：
+#   curl -s https://api.github.com/repos/<owner>/<repo>/actions/runs/<id>/annotations
 name: 容器冒烟
 
 on:
@@ -26,7 +31,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 构建镜像（与云托管平台的构建等价）
-        run: docker build -t logic-coloc .
+        run: |
+          if ! docker build -t logic-coloc . > /tmp/build.log 2>&1; then
+            tail -40 /tmp/build.log
+            detail=$(tail -c 900 /tmp/build.log | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=镜像构建失败::${detail}"
+            exit 1
+          fi
+          tail -5 /tmp/build.log
 
       - name: 启动容器
         run: docker run -d --name lc -p 8000:8000 logic-coloc
@@ -38,8 +50,9 @@ jobs:
             if [ "$code" = "200" ]; then echo "服务已就绪（第 ${i} 次探测）"; exit 0; fi
             sleep 2
           done
-          echo "::error::服务 80 秒内没有就绪"
           docker logs lc
+          detail=$(docker logs lc 2>&1 | tail -c 900 | sed 's/%/%25/g' | tr '\n' '|')
+          echo "::error title=服务 80 秒内没有就绪::${detail}"
           exit 1
 
       - name: 冒烟：静态资源与鉴权闸门
@@ -48,7 +61,7 @@ jobs:
           check() {  # 名称 URL 期望状态码
             code=$(curl -s -o /dev/null -w '%{http_code}' "$2")
             if [ "$code" = "$3" ]; then echo "OK   $1 → $code"
-            else echo "::error::$1 期望 $3，实际 $code"; fail=1; fi
+            else echo "::error title=静态资源检查失败::$1 期望 $3，实际 $code"; fail=1; fi
           }
           check "首页"                http://127.0.0.1:8000/                                  200
           check "logo 图标"           http://127.0.0.1:8000/static/assets/images/logo.webp   200
@@ -60,56 +73,84 @@ jobs:
 
       - name: 冒烟：注册 → 登录 → 读写自己的数据
         run: |
-          set -e
           base=http://127.0.0.1:8000
           reg=$(curl -s -X POST "$base/api/auth/register" -H 'Content-Type: application/json' \
                 -d '{"username":"ciuser","password":"ci-pass-123"}')
           echo "注册响应: $reg"
-          token=$(echo "$reg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-          [ -n "$token" ] || { echo "::error::注册没拿到 token"; exit 1; }
+          token=$(echo "$reg" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$token" ]; then
+            detail=$(echo "$reg" | tail -c 500 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=注册没拿到 token::${detail}"
+            exit 1
+          fi
           echo "OK   注册成功并拿到 token"
 
           login=$(curl -s -X POST "$base/api/auth/login" -H 'Content-Type: application/json' \
                   -d '{"username":"ciuser","password":"ci-pass-123"}' -o /dev/null -w '%{http_code}')
-          [ "$login" = "200" ] || { echo "::error::登录失败 $login"; exit 1; }
+          [ "$login" = "200" ] || { echo "::error title=登录失败::HTTP $login"; exit 1; }
           echo "OK   登录成功"
 
+          fail=0
           for path in /api/auth/me /api/user/profile /api/notes /api/reviews; do
             code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base$path")
-            [ "$code" = "200" ] || { echo "::error::$path 期望 200，实际 $code"; exit 1; }
-            echo "OK   $path → $code"
+            if [ "$code" = "200" ]; then echo "OK   $path → $code"
+            else echo "::error title=鉴权接口异常::$path 期望 200，实际 $code"; fail=1; fi
           done
+          [ "$fail" = "0" ] || exit 1
 
           # 没有 key 时必须体面降级（503 + 明确业务码），而不是 500 崩掉
           code=$(curl -s -o /tmp/explain.json -w '%{http_code}' -X POST "$base/api/explain" \
                  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
                  --data-binary '{"text":"negative feedback keeps a system stable"}')
           echo "explain（无 key）→ $code $(cat /tmp/explain.json)"
-          [ "$code" = "503" ] || { echo "::error::无 key 时应为 503，实际 $code"; exit 1; }
+          if [ "$code" != "503" ]; then
+            detail=$(tail -c 400 /tmp/explain.json | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=无 key 时应为 503::实际 $code，响应 ${detail}"
+            exit 1
+          fi
           echo "OK   无 key 时按预期返回 503 而非崩溃"
 
       - name: 冒烟：容器内依赖与写入能力
         run: |
-          set -e
-          # 这一条就是本次加工作流的主因：确认 libGL 之类的系统库没缺 ——
-          # opencv 是 rapidocr 的依赖，缺 libGL.so.1 时 import 直接失败。
-          docker exec lc python -c "import cv2; print('OK   cv2', cv2.__version__)"
-          docker exec lc python -c "import onnxruntime; print('OK   onnxruntime', onnxruntime.__version__)"
+          # 这一条是加工作流的主因之一：确认 libGL / glib 之类的系统库没缺 ——
+          # opencv 是 rapidocr 的依赖，缺库时 import 直接失败。
+          if ! out=$(docker exec lc python -c "import cv2; print('cv2', cv2.__version__)" 2>&1); then
+            detail=$(echo "$out" | tail -c 900 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=cv2 导入失败（多半是缺系统库）::${detail}"
+            exit 1
+          fi
+          echo "OK   $out"
+
+          if ! out=$(docker exec lc python -c "import onnxruntime; print('onnxruntime', onnxruntime.__version__)" 2>&1); then
+            detail=$(echo "$out" | tail -c 500 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=onnxruntime 导入失败::${detail}"
+            exit 1
+          fi
+          echo "OK   $out"
 
           # 真跑一次 OCR（模型随 wheel 分发，无需联网）。只要求「不抛异常」，
           # 不断言识别内容 —— 造出来的测试图字太小，OCR 认不出也属正常。
-          docker exec lc python -c "
+          if ! out=$(docker exec lc python -c "
           from PIL import Image, ImageDraw
           img = Image.new('RGB', (320, 80), 'white')
           ImageDraw.Draw(img).text((10, 30), 'LOGIC COLOC', fill='black')
           img.save('/tmp/t.png')
           from logic_coloc.api.ocr_engine import get_ocr_engine
           result, _ = get_ocr_engine()('/tmp/t.png')
-          print('OK   OCR 跑通，识别到', len(result or []), '段文字')
-          "
+          print('OCR 跑通，识别到', len(result or []), '段文字')
+          " 2>&1); then
+            detail=$(echo "$out" | tail -c 900 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=容器内 OCR 执行失败::${detail}"
+            exit 1
+          fi
+          echo "OK   $out"
 
           # 确认账号确实落到了容器文件系统里（云托管要挂持久化卷，否则重启就丢）
-          docker exec lc sh -c 'ls -la /app/logic_coloc/data/users.json && ls /app/logic_coloc/data/users/ && ls -d /app/logic_coloc/uploads'
+          if ! out=$(docker exec lc sh -c 'ls -la /app/logic_coloc/data/users.json && ls /app/logic_coloc/data/users/ && ls -d /app/logic_coloc/uploads' 2>&1); then
+            detail=$(echo "$out" | tail -c 500 | sed 's/%/%25/g' | tr '\n' '|')
+            echo "::error title=账号或上传目录没有落盘::${detail}"
+            exit 1
+          fi
           echo "OK   账号与上传目录已在容器内落盘"
 
       - name: 失败时导出容器日志
