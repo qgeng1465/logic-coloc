@@ -130,17 +130,27 @@ python -m pytest logic_coloc/tests/ -q
 | 3 | **挂持久化卷 / CFS** 到 `/app/logic_coloc/data` 与 `/app/logic_coloc/uploads` | 容器重启或重新部署会清空**身份记录本身**与全部笔记、卡片、附件。本地不会遇到这个问题（磁盘一直在），所以特别容易忽略 |
 | 4 | 把**请求超时**设为 **≥300 秒**（配 `LC_DISCOVER_TIMEOUT=240`，必须小于平台超时） | 「发现同源」单次要跑约 70 秒，平台默认超时会在半路掐断，表现为「模型服务异常」 |
 
-### 不用等云平台：push 就会自动冒烟
+### 不用等云平台：先跑容器冒烟
 
-`.github/workflows/container-smoke.yml` 在每次 push 到 `main` 时，会在 GitHub 的真 Linux
-机器上用**仓库根那份 Dockerfile** 构建镜像、起容器、跑一遍真实请求 —— 等价于云托管平台的
-构建步骤，但不用登任何控制台。**部署前先看它是不是绿的**，绿了说明云上构建也会成功。
+`.github/workflows/container-smoke.yml` 会在 GitHub 的真 Linux 机器上用**仓库根那份
+Dockerfile** 构建镜像、起容器、跑一遍真实请求 —— 等价于云托管平台的构建步骤，但不用登任何
+控制台。工作流**配置为**在 push 到 `main` 时自动运行，**部署前先看它是不是绿的**，
+绿了说明云上构建也会成功。
+
+> ⚠️ **别把「没跑」当成「失败」。** 截至 2026-09-13，仓库里 8 次运行**全部**由仓库所有者推送
+> 触发；协作者推送的那一次没有产生运行（原因未查明，GitHub 文档只明确写了 `GITHUB_TOKEN`
+> 推送不触发，不适用于此）。需要确定性结果时，去 Actions 页面手动 **Run workflow**
+> —— 该工作流带 `workflow_dispatch`，任何时候都能手动起一次。
 
 失败日志需要登录才能看，所以每个失败点都额外输出一条 `::error::` 注解，而**注解是公开可读的**：
 
 ```bash
-curl -s https://api.github.com/repos/Scarlett-yzy/logic-coloc/actions/runs/<run-id>/annotations
+curl -s -H "Authorization: Bearer <你的 token>" \
+  https://api.github.com/repos/Scarlett-yzy/logic-coloc/actions/runs/<run-id>/annotations
 ```
+
+> 一定带上 `Authorization` 头：不带就是匿名额度，**每小时只有 60 次且按出口 IP 计**，
+> 很容易先被别的排查用光，报 `API rate limit exceeded` 而不是你想要的结果。
 
 它只回答「镜像能不能构建、服务能不能起来、静态资源和鉴权闸门对不对」——
 **不跑 pytest**（见第二节），也**不验真调大模型**（CI 里不配 `LC_API_KEY`，密钥绝不进仓库）。
