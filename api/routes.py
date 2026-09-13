@@ -6,13 +6,19 @@ import asyncio
 import logging
 import os
 import socket
+import threading
+import time
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
+import secrets
+
+import requests
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from ..agents import tools
+from ..agents.graph import DiscoveryCancelled
 from ..agents.schemas import Concept
 
 from ..sessions.manager import SessionNotFoundError
@@ -27,11 +33,13 @@ from .review_store import (
     review_list_item,
     save_review_summary,
 )
-from .schemas import CardPayload, CardReviewPayload, ChatRequest, ChatResponse, CredentialsPayload, DiscoverRequest, DiscoverResponse, ExplainRequest, ExplainResponse, LibraryPayload, NoteMovePayload, NotePayload, OCRResponse, PointsPayload, ProfilePayload, SessionResponse, UserUpdatePayload
+from .schemas import CardPayload, CardReviewPayload, ChatRequest, ChatResponse, CredentialsPayload, DiscoverRequest, DiscoverResponse, ExplainRequest, ExplainResponse, LibraryPayload, NoteMovePayload, NotePayload, OCRResponse, PointsPayload, ProfilePayload, SessionResponse, UserUpdatePayload, ZhihuSearchItem, ZhihuSearchRequest, ZhihuSearchResponse, ZhihuResearchRequest, ZhihuResearchResponse, ZhihuLibrarySyncRequest
 from .card_store import due_cards, load_cards, review_card, save_card, _parse_timestamp
 from .library_store import load_library, save_library
 from .service import LLMBackendUnavailableError, LogicColocService, ServiceError
+from . import zhihu_store
 from .. import config
+from .. import feature_extractor
 
 
 router = APIRouter(prefix="/api")
@@ -43,6 +51,39 @@ DISCOVER_TIMEOUT_SECONDS = int(__import__("os").environ.get("LC_DISCOVER_TIMEOUT
 # 复盘小结是后台副作用，用户没在等它。llm() 自身没有单次超时，
 # 端点数掉时会重试 3 次 × config.TIMEOUT（默认 180s），不封顶会占住线程池近 9 分钟。
 REVIEW_SUMMARY_TIMEOUT_SECONDS = int(os.environ.get("LC_REVIEW_SUMMARY_TIMEOUT", "60"))
+_discover_cancel_events: dict[tuple[str, str], tuple[threading.Event, float]] = {}
+_discover_cancel_lock = threading.Lock()
+_zhihu_rate_lock = threading.Lock()
+_zhihu_last_request_at = 0.0
+ZHIHU_MIN_REQUEST_INTERVAL = float(os.environ.get("LC_ZHIHU_REQUEST_INTERVAL", "1.5"))
+ZHIHU_CACHE_TTL_SECONDS = int(os.environ.get("LC_ZHIHU_CACHE_TTL", "1800"))
+_zhihu_search_cache: dict[tuple[str, int], tuple[float, ZhihuSearchResponse]] = {}
+_zhihu_oauth_states: dict[str, tuple[str, float]] = {}
+
+
+def _wait_for_zhihu_slot() -> None:
+    """Serialize upstream calls so research mode cannot burst three requests at Zhihu."""
+    global _zhihu_last_request_at
+    with _zhihu_rate_lock:
+        remaining = ZHIHU_MIN_REQUEST_INTERVAL - (time.monotonic() - _zhihu_last_request_at)
+        if remaining > 0:
+            time.sleep(remaining)
+        _zhihu_last_request_at = time.monotonic()
+
+
+def _discover_event(user_id: str, request_id: str) -> threading.Event:
+    now = time.monotonic()
+    with _discover_cancel_lock:
+        # 请求量很小；顺手清理一小时前的标识，避免客户端断线后常驻。
+        stale = [key for key, (_, created) in _discover_cancel_events.items() if now - created > 3600]
+        for key in stale:
+            _discover_cancel_events.pop(key, None)
+        existing = _discover_cancel_events.get((user_id, request_id))
+        # “取消”请求可能比分析请求更早到达服务器；复用预先置位的事件，避免快点
+        # 取消时出现前端已停、后端却仍完整运行的竞态。
+        event = existing[0] if existing else threading.Event()
+        _discover_cancel_events[(user_id, request_id)] = (event, now)
+        return event
 
 
 def get_service() -> LogicColocService:
@@ -278,22 +319,176 @@ def _discover_failure(request: DiscoverRequest) -> DiscoverResponse:
     )
 
 
+@router.post("/zhihu/search", response_model=ZhihuSearchResponse)
+def zhihu_search(request: ZhihuSearchRequest, user: dict = Depends(current_user)) -> ZhihuSearchResponse:
+    """Search Zhihu through its official developer API; never scrape article pages."""
+    secret = os.environ.get("ZHIHU_ACCESS_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="尚未配置知乎开放平台 Access Secret，请在后端环境变量中设置 ZHIHU_ACCESS_SECRET")
+    cache_key = (request.query.strip().casefold(), request.count)
+    cached = _zhihu_search_cache.get(cache_key)
+    if cached and time.monotonic() - cached[0] <= ZHIHU_CACHE_TTL_SECONDS:
+        return cached[1]
+    _wait_for_zhihu_slot()
+    try:
+        response = requests.get(
+            "https://developer.zhihu.com/api/v1/content/zhihu_search",
+            params={"Query": request.query.strip(), "Count": request.count},
+            headers={
+                "Authorization": f"Bearer {secret}",
+                "X-Request-Timestamp": str(int(datetime.now(timezone.utc).timestamp())),
+                "Content-Type": "application/json",
+            },
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        logger.info("Zhihu developer API request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="暂时无法连接知乎开放平台，请稍后重试") from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="知乎开放平台返回了无法识别的数据") from exc
+    api_code = int(payload.get("Code", payload.get("code", 0)) or 0)
+    if not response.ok or api_code != 0:
+        messages = {
+            20001: "知乎开放平台鉴权失败，请检查 Access Secret",
+            30001: "知乎搜索调用过于频繁或今日额度已用完",
+            90001: "知乎开放平台内部错误，请稍后重试",
+        }
+        detail = messages.get(api_code) or str(payload.get("Message") or payload.get("message") or "知乎搜索失败")
+        # 30001 是频率/额度限制，不是网关故障。明确返回 429，研究模式才能退避重试，
+        # 并在后续角度失败时保留已经拿到的内容。
+        status_code = 429 if api_code == 30001 else 502
+        raise HTTPException(status_code=status_code, detail=detail, headers={"Retry-After": "3"} if status_code == 429 else None)
+    data = payload.get("Data") or payload.get("data") or {}
+    raw_items = data.get("Items") or data.get("items") or []
+    items = [ZhihuSearchItem(
+        url=str(item.get("Url") or item.get("url") or ""),
+        title=str(item.get("Title") or item.get("title") or ""),
+        summary=str(item.get("ContentText") or item.get("content_text") or ""),
+        content_type=str(item.get("ContentType") or item.get("content_type") or ""),
+        author_name=str(item.get("AuthorName") or item.get("author_name") or ""),
+        vote_up_count=int(item.get("VoteUpCount") or item.get("vote_up_count") or 0),
+        comment_count=int(item.get("CommentCount") or item.get("comment_count") or 0),
+    ) for item in raw_items if isinstance(item, dict)]
+    result = ZhihuSearchResponse(items=items)
+    _zhihu_search_cache[cache_key] = (time.monotonic(), result)
+    # 小型进程内缓存足够保护额度；限制条数，避免长期运行无限增长。
+    if len(_zhihu_search_cache) > 100:
+        oldest = min(_zhihu_search_cache, key=lambda key: _zhihu_search_cache[key][0])
+        _zhihu_search_cache.pop(oldest, None)
+    return result
+
+
+@router.post("/zhihu/research", response_model=ZhihuResearchResponse)
+def zhihu_research(request: ZhihuResearchRequest, user: dict = Depends(current_user)) -> ZhihuResearchResponse:
+    """Turn selected official Zhihu snippets into one grounded, source-listed study note."""
+    source_lines = []
+    for index, item in enumerate(request.items, 1):
+        source_lines.append(f"[{index}] 标题：{item.title}\n作者：{item.author_name or '未知'}；赞同：{item.vote_up_count}；评论：{item.comment_count}\n摘要：{item.summary or '暂无摘要'}\n原文：{item.url}")
+    prompt = f"学习主题：{request.topic}\n\n知乎资料（只能依据这些摘要，不得补写摘要中没有的事实）：\n" + "\n\n".join(source_lines)
+    system = """你是严谨的学习笔记编辑。请把多篇知乎摘要整合成一篇适合初学者阅读的中文学习笔记。
+要求：去重合并共同知识；明确标出不同文章新增的观点；不把赞同数当作事实正确性；对摘要没有覆盖的内容不要臆测。
+输出严格 JSON，不要 Markdown 代码围栏，格式：{"title":"不超过30字的标题","content":"完整笔记正文"}
+正文必须包含以下小标题：一、先建立整体理解；二、核心概念与运行机制；三、不同资料补充的观点；四、容易混淆的地方与边界；五、学习后的自测问题；六、参考来源。
+“参考来源”必须逐条列出 [1]...[N]，包含标题、作者、赞同/评论数量和原文 URL。"""
+    try:
+        raw = feature_extractor.llm(system, prompt, max_tokens=3000, temperature=0.2)
+        data = feature_extractor.extract_json(raw)
+        title = str(data.get("title") or f"{request.topic}：知乎资料整合笔记").strip()
+        content = str(data.get("content") or "").strip()
+        if not content:
+            raise ValueError("empty research note")
+        return ZhihuResearchResponse(title=title, content=content, source_count=len(request.items))
+    except Exception as exc:
+        logger.exception("Zhihu research note generation failed: %s", exc)
+        raise HTTPException(status_code=502, detail="知乎资料整合失败，请稍后重试") from exc
+
+@router.get("/zhihu/oauth/authorize")
+def zhihu_oauth_authorize(request: Request, user: dict = Depends(current_user)) -> dict:
+    """Return the official OAuth URL. Endpoints/scopes are configured by deployment."""
+    client_id = os.environ.get("ZHIHU_OAUTH_CLIENT_ID", "").strip()
+    authorize = os.environ.get("ZHIHU_OAUTH_AUTHORIZE_URL", "https://www.zhihu.com/oauth/authorize").strip()
+    if not client_id:
+        raise HTTPException(status_code=503, detail="尚未配置知乎 OAuth Client ID")
+    state = secrets.token_urlsafe(24); _zhihu_oauth_states[state] = (user["id"], time.monotonic())
+    redirect_uri = os.environ.get("ZHIHU_OAUTH_REDIRECT_URI", str(request.base_url).rstrip("/") + "/api/zhihu/oauth/callback")
+    scope = os.environ.get("ZHIHU_OAUTH_SCOPE", "read")
+    return {"url": authorize + "?" + urlencode({"client_id": client_id, "redirect_uri": redirect_uri, "response_type": "code", "scope": scope, "state": state})}
+
+@router.get("/zhihu/oauth/callback")
+def zhihu_oauth_callback(request: Request, code: str = "", state: str = "", error: str = "") -> dict:
+    record = _zhihu_oauth_states.pop(state, None)
+    if not record or time.monotonic() - record[1] > 600: raise HTTPException(status_code=400, detail="OAuth state 无效或已过期")
+    if error or not code: raise HTTPException(status_code=400, detail="知乎授权未完成")
+    token_url = os.environ.get("ZHIHU_OAUTH_TOKEN_URL", "").strip()
+    if not token_url: raise HTTPException(status_code=503, detail="尚未配置知乎 OAuth Token 地址")
+    try:
+        response = requests.post(token_url, data={"grant_type":"authorization_code", "code":code, "client_id":os.environ.get("ZHIHU_OAUTH_CLIENT_ID", ""), "client_secret":os.environ.get("ZHIHU_OAUTH_CLIENT_SECRET", ""), "redirect_uri":os.environ.get("ZHIHU_OAUTH_REDIRECT_URI", str(request.base_url).rstrip("/") + "/api/zhihu/oauth/callback")}, timeout=20)
+        response.raise_for_status(); payload = response.json()
+    except (requests.RequestException, ValueError) as exc: raise HTTPException(status_code=502, detail="知乎 OAuth 换取令牌失败") from exc
+    token = {k: payload.get(k) for k in ("access_token", "refresh_token", "expires_in", "scope") if payload.get(k) is not None}
+    path = user_paths.ensure_user_storage(record[0]) / "zhihu_oauth.json"; path.write_text(__import__('json').dumps(token, ensure_ascii=False), encoding="utf-8")
+    return {"code": 0, "connected": True, "scope": token.get("scope", "")}
+
+@router.get("/zhihu/library")
+def zhihu_library(user: dict = Depends(current_user)) -> dict:
+    return {"code": 0, "items": zhihu_store.load(user["id"])}
+
+@router.post("/zhihu/library/sync")
+def zhihu_library_sync(request: ZhihuLibrarySyncRequest, user: dict = Depends(current_user)) -> dict:
+    items = [item.model_dump() for item in request.items]
+    groups = [("计算机与人工智能", "人工智能 深度学习 机器学习 神经网络 算法 编程 数据"), ("数学与统计", "数学 统计 概率 微积分"), ("工程与控制", "自动控制 工程 机械 电路"), ("学习方法", "学习 教育 读书 方法"), ("社会科学", "社会 心理 经济 历史")]
+    for item in items:
+        text = (item.get("title", "") + " " + item.get("summary", "")).lower()
+        item["categories"] = [name for name, words in groups if any(word in text for word in words.split())] or ["待整理"]
+    return {"code": 0, "items": zhihu_store.merge(user["id"], items)}
+
+@router.get("/zhihu/library/similar")
+def zhihu_library_similar(query: str, user: dict = Depends(current_user)) -> dict:
+    terms = {x for x in query.lower().split() if len(x) > 1}
+    matches = []
+    for item in zhihu_store.load(user["id"]):
+        words = set((item.get("title", "") + " " + item.get("summary", "")).lower().split())
+        score = len(terms & words) / max(1, len(terms))
+        if score >= 0.2: matches.append((score, item))
+    matches.sort(key=lambda pair: pair[0], reverse=True)
+    return {"code": 0, "items": [item for _, item in matches[:3]]}
+
+
 @router.post("/discover", response_model=DiscoverResponse)
 async def discover(request: DiscoverRequest, service: LogicColocService = Depends(get_service), user: dict = Depends(current_user)) -> DiscoverResponse:
+    cancel_event = _discover_event(user["id"], request.request_id) if request.request_id else None
     try:
         return await asyncio.wait_for(
-            run_in_threadpool(service.discover, request, user_id=user["id"]),
+            run_in_threadpool(service.discover, request, user_id=user["id"], cancel_check=cancel_event.is_set if cancel_event else None),
             timeout=DISCOVER_TIMEOUT_SECONDS,
         )
+    except DiscoveryCancelled:
+        return DiscoverResponse(code=499, message="分析已取消", concept=Concept(name=request.text), errors=["DISCOVERY_CANCELLED"])
     except asyncio.TimeoutError:
         logger.exception("Discover request timed out after %s seconds", DISCOVER_TIMEOUT_SECONDS)
         return _discover_failure(request)
     except ServiceError:
         logger.exception("Discover model service failed")
         return _discover_failure(request)
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected discover request failure")
         return _discover_failure(request)
+    finally:
+        if request.request_id:
+            with _discover_cancel_lock:
+                _discover_cancel_events.pop((user["id"], request.request_id), None)
+
+
+@router.post("/discover/{request_id}/cancel")
+def cancel_discover(request_id: str, user: dict = Depends(current_user)) -> dict:
+    with _discover_cancel_lock:
+        entry = _discover_cancel_events.get((user["id"], request_id))
+        event = entry[0] if entry else threading.Event()
+        event.set()
+        _discover_cancel_events[(user["id"], request_id)] = (event, time.monotonic())
+    return {"code": 0, "cancelled": True}
 
 
 @router.get("/session/{session_id}", response_model=SessionResponse)

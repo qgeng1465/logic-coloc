@@ -341,8 +341,10 @@ def build_learning_report(
         verdict = "REJECTED"
         verdict_reason = "确定性结构相似度未达到当前阈值。"
     elif not mappings:
-        verdict = "REJECTED"
-        verdict_reason = "没有通过类型校验的机制映射。"
+        # A missing/invalid generated mapping is an evidence-generation
+        # failure, not evidence that a high-scoring structural match is false.
+        verdict = "NEEDS_REVIEW"
+        verdict_reason = "结构分数已通过，但本次没有生成通过类型校验的机制映射，需要进一步核验。"
     elif len(mappings) < 2 or len(lesson_sections) < 2 or not intersection_lesson or not failure_boundaries or not known_differences or any(
         not item.source_role or not item.target_role or not item.correspondence_reason
         or not item.evidence_refs or not item.limitations

@@ -16,6 +16,16 @@ from .state import AgentState
 
 EXPLAIN_INTENTS = {Intent.EXPLAIN, Intent.SIMPLIFY, Intent.EXAMPLE, Intent.TERM, Intent.WHY, Intent.COMPARE, Intent.FOLLOW_UP}
 
+
+class DiscoveryCancelled(BaseException):
+    """Escape the graph without being folded into an ordinary model error."""
+
+
+def _stop_if_cancelled(state: AgentState | dict[str, Any]) -> None:
+    check = _get(state, "cancel_check")
+    if callable(check) and check():
+        raise DiscoveryCancelled()
+
 def _get(state: AgentState | dict[str, Any], key: str, default: Any = None) -> Any:
     return state.get(key, default) if isinstance(state, dict) else getattr(state, key, default)
 
@@ -54,6 +64,7 @@ def _knowledge(state: AgentState, profile: Any, terms: list[str]) -> KnowledgeCo
     return KnowledgeContext(source_text=text, concept=Concept(name=text), logic_profile=profile, key_terms=terms)
 
 def extract_for_workflow(state: AgentState, manager: SessionManager | None = None) -> dict[str, Any]:
+    _stop_if_cancelled(state)
     if state.skip_extraction:
         return {}
     extraction_text = state.user_input or ""
@@ -69,6 +80,7 @@ def extract_for_workflow(state: AgentState, manager: SessionManager | None = Non
         return {"errors": [*state.errors, f"extract_features: {exc}"]}
 
 def retrieve_for_discover(state: AgentState, retriever: Retriever | None = None) -> dict[str, Any]:
+    _stop_if_cancelled(state)
     if state.logic_profile is None:
         return {"candidate_concepts": [], "retrieval_scores": {}}
     retriever = retriever or Retriever(Corpus().load())
@@ -79,9 +91,15 @@ def retrieve_for_discover(state: AgentState, retriever: Retriever | None = None)
 def score_and_map(state: AgentState) -> dict[str, Any]:
     homology, mappings, critiques, reports, errors = [], [], [], [], list(state.errors)
     for candidate in state.candidate_concepts:
+        _stop_if_cancelled(state)
         try:
             result = tools.calculate_homonomy(state.logic_profile, candidate.logic_profile); score = float(result["score"])
-            homology_result = HomologyResult(candidate_id=candidate.id, score=score, method=result.get("method", config.METHOD))
+            homology_result = HomologyResult(
+                candidate_id=candidate.id,
+                score=score,
+                method=result.get("method", config.METHOD),
+                threshold=config.THRESHOLD,
+            )
             homology.append(homology_result)
             # Keep every retrieved candidate visible, including low-similarity
             # results. Entity mapping/report generation remains gated by the
@@ -90,6 +108,7 @@ def score_and_map(state: AgentState) -> dict[str, Any]:
                 continue
             candidate_text = "\n".join(filter(None, [candidate.concept, candidate.description, candidate.mechanism]))
             mapped = tools.map_entities(state.user_input or "", candidate_text, score)
+            _stop_if_cancelled(state)
             if not isinstance(mapped, MappingResult): continue
             mapped = mapped.model_copy(update={"candidate_id": candidate.id}); mappings.append(mapped)
             source_concept = state.knowledge_context.concept if state.knowledge_context else Concept(name=state.user_input or "")
@@ -97,6 +116,7 @@ def score_and_map(state: AgentState) -> dict[str, Any]:
                 state.user_input or "", source_concept, state.logic_profile,
                 candidate, homology_result, mapped,
             )
+            _stop_if_cancelled(state)
             reports.append(report)
             critique = tools.critique_learning_report(report)
             critiques.append(CritiqueResult(
@@ -111,6 +131,7 @@ def score_and_map(state: AgentState) -> dict[str, Any]:
     return {"homonomy_results": homology, "mapping_results": mappings, "critique_results": critiques, "learning_reports": reports, "errors": errors}
 
 def generate_response(state: AgentState) -> dict[str, Any]:
+    _stop_if_cancelled(state)
     if state.errors and state.logic_profile is None:
         text = "无法完成特征提取：" + state.errors[-1]
         return {"final_response": text}

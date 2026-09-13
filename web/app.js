@@ -7,7 +7,7 @@
 const API_BASE = window.LC_API_BASE || "";
 const apiUrl = (path) => `${API_BASE}${path}`;
 let dueEndpointUnavailable = false;
-const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [] };
+const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
 // 草稿也按账号隔离。这里先给未登录时的默认值，登录后由 applyStorageScope 按 uid
 // 重建 key 并重读文本（见下方「账号与登录态」）。
 let draftStorageKeys = {
@@ -85,7 +85,7 @@ function handleUnauthorized() {
    里 token 失效后会重建一个**新 uid**，命名空间仍然照常起作用，所以这层没动。 */
 const buildStorageKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
-  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
+  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, researchHistory: `research_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
 };
 const buildDraftKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
@@ -152,6 +152,7 @@ function setLoading(active, text = "正在分析…", trigger = null) {
   $("loadingText").textContent = text;
   $("loadingTimer").textContent = "";
   $("loading").hidden = !active;
+  $("cancelLoading").hidden = !(active && trigger?.id === "discoverButton");
   if (trigger) trigger.disabled = active;
   window.clearInterval(loadingTimer);
   if (active) {
@@ -180,11 +181,12 @@ function attachImageFallback(image, container, fallbackText = "") {
   return image;
 }
 
-async function request(path, payload) {
+async function request(path, payload, options = {}) {
   const response = await authFetch(apiUrl(path), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    method: options.method || "POST",
+    headers: payload == null ? {} : { "Content-Type": "application/json" },
+    body: payload == null ? undefined : JSON.stringify(payload),
+    signal: options.signal,
   });
   let data;
   try { data = await response.json(); } catch { data = {}; }
@@ -197,9 +199,7 @@ async function request(path, payload) {
   return data;
 }
 
-// 2026-09-13：这里原来是 extractFirstUrl()，配合 /api/extract_link 做「从链接导入」。
-// 那个后端接口从来没注册过 —— 每次点「解析链接」都是 404，必弹「该链接被平台限制」。
-// 该功能连同入口一起删除，原因见 web/index.html 里 launcher 那段的注释。
+// 知乎内容不再抓取网页正文；当前统一经 /api/zhihu/search 调用官方开放平台搜索。
 
 // 复习排期，单位秒，**一律以「天」为粒度**。必须与后端 api/card_store.py 的
 // EBBINGHAUS_INTERVALS + EBBINGHAUS_LONG_INTERVALS 首尾相接后逐项一致 —— 两边各算一次
@@ -281,9 +281,73 @@ function showKnowledgeLauncher(panelId) {
 function clearDraftForPanel(panelId) {
   setDraftForPanel(panelId, "");
 }
-// 2026-09-13：删掉了 parseImportedLink()（「从链接导入」的提交逻辑），它调的
-// /api/extract_link 后端从未注册，必然 404 并弹「该链接被平台限制，解析失败」。
-// 导入弹窗现在只剩「手动创建」「从截图导入」两条路，两条都是通的。
+async function searchZhihu() {
+  const input = $("zhihuSearchQuery"), feedback = $("zhihuSearchFeedback"), results = $("zhihuSearchResults");
+  const query = input.value.trim();
+  if (!query) { feedback.textContent = "请先输入想搜索的主题或问题。"; return; }
+  feedback.textContent = state.zhihuMode === "research" ? "正在从核心概念、机制原理和争议边界三个角度搜索…" : "正在搜索知乎真实讨论…"; results.replaceChildren(); $("zhihuSetupHelp").hidden = true;
+  const button = $("confirmZhihuSearch"); button.disabled = true;
+  try {
+    // 研究模式也只消耗一次知乎 API 调用。开放平台的 30001 同时代表频率或日配额，
+    // 三个扩展词即使串行也会把一次研究放大成三份额度；角度归类改在本地完成。
+    const queries = [query];
+    const responses = [];
+    const researchErrors = [];
+    // 知乎开放平台对瞬时并发很敏感。研究模式必须排队请求，不能 Promise.all 三连发；
+    // 某个扩展角度触发限流时，保留前面已经取得的资料，而不是整批清空。
+    for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
+      if (state.zhihuMode === "research") feedback.textContent = "正在获取知乎资料并在本地整理研究角度…";
+      try {
+        responses.push({ data: await request("/api/zhihu/search", { query: queries[queryIndex], count: state.zhihuMode === "research" ? 6 : 5 }), queryIndex });
+      } catch (error) {
+        researchErrors.push(error);
+        if (state.zhihuMode !== "research" || !responses.length) throw error;
+      }
+    }
+    const angleOf = (item, index) => {
+      const content = `${item.title || ""} ${item.summary || ""}`;
+      if (/争议|局限|缺点|问题|风险|反对|误区|失败|质疑/.test(content)) return "争议边界";
+      if (/原理|机制|如何|为什么|过程|作用|反馈|因果/.test(content)) return "机制原理";
+      return index % 3 === 2 ? "争议边界" : index % 3 === 1 ? "机制原理" : "核心概念";
+    };
+    const merged = responses.flatMap(({ data }) => (Array.isArray(data.items) ? data.items : []).map((item, index) => ({ ...item, research_angle: angleOf(item, index) })));
+    const items = [...new Map(merged.map((item) => [item.url || `${item.title}:${item.summary}`, item])).values()];
+    state.zhihuResearchItems = [];
+    const partial = researchErrors.length ? "（知乎当前受到频率或额度限制）" : "";
+    feedback.textContent = items.length ? (state.zhihuMode === "research" ? `找到 ${items.length} 条并已按研究角度整理${partial}；请选择 2–6 条形成材料包` : `找到 ${items.length} 条内容，选择一条继续`) : "没有找到相关内容，换个关键词试试。";
+    items.forEach((item) => {
+      const card = document.createElement("article"); card.className = "zhihu-result-card";
+      if (state.zhihuMode === "research") {
+        const select = document.createElement("input"); select.type = "checkbox"; select.className = "zhihu-research-check"; select.setAttribute("aria-label", `选择${item.title || "这条内容"}`);
+        select.addEventListener("change", () => {
+          if (select.checked && state.zhihuResearchItems.length >= 6) { select.checked = false; showToast("研究材料最多选择 6 条"); return; }
+          state.zhihuResearchItems = select.checked ? [...state.zhihuResearchItems, item] : state.zhihuResearchItems.filter((entry) => entry !== item);
+          $("zhihuSelectionCount").textContent = `已选 ${state.zhihuResearchItems.length} 条（最多 6 条）`;
+          $("useZhihuResearch").disabled = state.zhihuResearchItems.length < 2;
+          card.classList.toggle("selected", select.checked);
+        });
+        const angle = document.createElement("span"); angle.className = "zhihu-angle"; angle.textContent = item.research_angle;
+        card.append(select, angle);
+      }
+      const title = document.createElement("strong"); title.textContent = item.title || "知乎内容";
+      const meta = document.createElement("small"); meta.textContent = [item.author_name, `${item.vote_up_count || 0} 赞同`, `${item.comment_count || 0} 评论`].filter(Boolean).join(" · ");
+      const summary = document.createElement("p"); summary.textContent = item.summary || "暂无摘要";
+      const actions = document.createElement("div"); actions.className = "zhihu-result-actions";
+      const use = document.createElement("button"); use.type = "button"; use.className = "primary compact"; use.textContent = "用这条发现同源"; use.hidden = state.zhihuMode === "research";
+      use.addEventListener("click", () => {
+        const text = [item.title, item.summary, item.url ? `来源：${item.url}` : ""].filter(Boolean).join("\n\n");
+        placeImportedText(text, "知乎摘要已放入输入框，可以开始寻找同源啦", state.importPanelTarget);
+      });
+      const source = document.createElement("a"); source.href = item.url || "#"; source.target = "_blank"; source.rel = "noopener noreferrer"; source.textContent = "查看知乎原文 ↗";
+      actions.append(use, source); card.append(title, meta, summary, actions); results.append(card);
+    });
+    $("zhihuResearchToolbar").hidden = state.zhihuMode !== "research" || !items.length;
+  } catch (error) {
+    const missingSecret = error.status === 503 || String(error.message || "").includes("Access Secret");
+    feedback.textContent = missingSecret ? "知乎搜索尚未启用：后端还没有配置 Access Secret。" : (error.message || "知乎搜索暂时不可用。");
+    $("zhihuSetupHelp").hidden = !missingSecret;
+  } finally { button.disabled = false; }
+}
 
 async function importImage(file) {
   if (!file) return; const feedback = $("imageImportFeedback"); feedback.textContent = "正在识别图片…";
@@ -528,6 +592,16 @@ const verdictLabels = {
   INSUFFICIENT_EVIDENCE: "证据不足",
 };
 
+const verdictPriority = { RELIABLE_WITH_LIMITS: 0, NEEDS_REVIEW: 1, INSUFFICIENT_EVIDENCE: 2, REJECTED: 3 };
+
+function effectiveVerdict(record, report, homology) {
+  const raw = report?.verdict || ({ "有限成立": "RELIABLE_WITH_LIMITS", "待核验": "NEEDS_REVIEW", "证据不足": "INSUFFICIENT_EVIDENCE", "不成立": "REJECTED" }[record.reliability]) || "NEEDS_REVIEW";
+  // Compatibility for historical responses produced before the verdict fix:
+  // a high structural score cannot be labelled “not established” merely
+  // because the generated mapping failed schema/type validation.
+  return raw === "REJECTED" && Number(homology) >= 0.72 ? "NEEDS_REVIEW" : raw;
+}
+
 function appendSection(parent, title, text) {
   if (!text) return;
   const section = document.createElement("section"); section.className = "report-section";
@@ -668,7 +742,19 @@ function renderLearningReport(card, report, candidateName) {
 function renderCandidates(data) {
   const container = $("candidateList"); container.replaceChildren();
   const retrievalScores = data.retrieval_scores || {};
-  const records = data.candidates?.length ? data.candidates : (data.results || []).map((candidate) => ({ candidate }));
+  const records = [...(data.candidates?.length ? data.candidates : (data.results || []).map((candidate) => ({ candidate })))];
+  const reportFor = (record) => {
+    const candidate = record.candidate || record;
+    const id = candidate.id || candidate.candidate_id || "未知候选";
+    return record.learning_report || data.learning_reports?.find((item) => item.candidate_id === id);
+  };
+  const homologyFor = (record) => record.homonomy_score ?? (record.candidate || record).score;
+  records.sort((left, right) => {
+    const leftVerdict = effectiveVerdict(left, reportFor(left), homologyFor(left));
+    const rightVerdict = effectiveVerdict(right, reportFor(right), homologyFor(right));
+    return (verdictPriority[leftVerdict] ?? 9) - (verdictPriority[rightVerdict] ?? 9)
+      || (Number(homologyFor(right)) || 0) - (Number(homologyFor(left)) || 0);
+  });
   records.forEach((record, index) => {
     const candidate = record.candidate || record;
     const id = candidate.id || candidate.candidate_id || "未知候选";
@@ -679,8 +765,9 @@ function renderCandidates(data) {
     const mapping = mappingResult?.mapping || {};
     const critique = record.critique || data.critiques?.find((item) => item.candidate_id === id);
     const report = record.learning_report || data.learning_reports?.find((item) => item.candidate_id === id);
-    const reliable = report?.verdict === "RELIABLE_WITH_LIMITS" || record.reliability === "有限成立";
-    const reliabilityLabel = report ? (verdictLabels[report.verdict] || "待核验") : (record.reliability || "待核验");
+    const verdict = effectiveVerdict(record, report, homology);
+    const reliable = verdict === "RELIABLE_WITH_LIMITS";
+    const reliabilityLabel = verdictLabels[verdict] || "待核验";
     const card = document.createElement("details"); card.className = "candidate";
     const summary = document.createElement("summary"); summary.className = "candidate-summary";
     const head = document.createElement("div"); head.className = "candidate-head";
@@ -689,12 +776,12 @@ function renderCandidates(data) {
     head.append(title, badge);
     const domain = document.createElement("span"); domain.className = "domain-pill"; domain.textContent = candidate.domain || "未标注";
     const scores = document.createElement("div"); scores.className = "scores";
-    [["检索相关性", retrieval], ["逻辑同源度", homology]].forEach(([label, value]) => {
+    [["检索相关性（召回）", retrieval], ["逻辑同源度（结构）", homology]].forEach(([label, value]) => {
       const score = document.createElement("div"); score.className = "score";
       const name = document.createElement("span"); name.textContent = label;
       const strong = document.createElement("strong"); strong.textContent = valueOrUnavailable(value);
       const track = document.createElement("div"); track.className = "track";
-      const fill = document.createElement("div"); fill.className = `fill ${label === "逻辑同源度" ? "candidate-fill" : ""}`; fill.style.width = Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "0%";
+      const fill = document.createElement("div"); fill.className = `fill ${label.startsWith("逻辑同源度") ? "candidate-fill" : ""}`; fill.style.width = Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : "0%";
       track.append(fill); score.append(name, strong, track); scores.append(score);
     });
     const whySummary = document.createElement("p"); whySummary.className = "candidate-why";
@@ -769,12 +856,14 @@ async function discover() {
   const text = $("discoverText").value.trim();
   showError("discoverError", "");
   if (!text) { showError("discoverError", "请先输入需要寻找同源结构的内容。"); return; }
+  const requestId = crypto.randomUUID ? crypto.randomUUID() : makeId("discover");
+  const controller = new AbortController(); state.discoverRequestId = requestId; state.discoverAbortController = controller;
   setLoading(true, "正在分析逻辑结构、检索候选并生成学习报告…", $("discoverButton"));
   try {
-    // Three candidates keep the full grounded reports within the model timeout
-    // while still providing a meaningful cross-disciplinary candidate stream.
-    const payload = { text, top_k: 3 };
-    const data = await request("/api/discover", payload);
+    // Five candidates prevent same-domain results from crowding out useful
+    // cross-disciplinary matches such as immune or ecological feedback.
+    const payload = { text, top_k: 5, request_id: requestId };
+    const data = await request("/api/discover", payload, { signal: controller.signal });
     if (data.code !== 0) {
       state.discoverSessionId = null;
       $("discoverResult").hidden = true;
@@ -791,8 +880,47 @@ async function discover() {
     if ((data.report || "").includes("LLM 调用失败") || (data.report || "").includes("无法完成特征提取")) {
       showError("discoverError", "同源分析当前无法连接模型后端，请确认 LLM 网关已经启动。");
     }
-  } catch (error) { console.error("Discover request failed", error); showError("discoverError", error.message); }
-  finally { setLoading(false, "", $("discoverButton")); }
+  } catch (error) { if (error.name !== "AbortError") { console.error("Discover request failed", error); showError("discoverError", error.message); } }
+  finally { if (state.discoverRequestId === requestId) { state.discoverAbortController = null; state.discoverRequestId = null; setLoading(false, "", $("discoverButton")); } }
+}
+
+function cancelDiscover() {
+  const requestId = state.discoverRequestId;
+  if (!requestId) return;
+  state.discoverAbortController?.abort();
+  state.discoverAbortController = null; state.discoverRequestId = null;
+  setLoading(false, "", $("discoverButton"));
+  showError("discoverError", "本次分析已取消，输入内容已保留。");
+  authFetch(apiUrl(`/api/discover/${encodeURIComponent(requestId)}/cancel`), { method: "POST" }).catch(() => {});
+}
+
+function useZhihuResearch() {
+  const items = state.zhihuResearchItems;
+  if (items.length < 2) { showToast("请至少选择 2 条知乎内容"); return; }
+  const topic = $("zhihuSearchQuery").value.trim();
+  const button = $("useZhihuResearch"); button.disabled = true; button.textContent = "正在整合…";
+  const sourceItems = items.map(({ research_angle, ...item }) => item);
+  request("/api/zhihu/research", { topic, items: sourceItems }).then((data) => {
+    state.researchNoteDraft = { title: data.title || `${topic}：知乎资料整合笔记`, content: data.content || "" };
+    const researchHistoryItem = { id: makeId("research"), type: "知乎研究", input: topic, sessionId: `zhihu_research_${Date.now()}`, timestamp: new Date().toISOString(), fullResponse: { title: state.researchNoteDraft.title, content: state.researchNoteDraft.content, sourceCount: data.source_count || items.length } };
+    saveHistory([researchHistoryItem, ...getHistory()]);
+    const preview = document.createElement("article"); preview.className = "zhihu-research-note-preview";
+    const heading = document.createElement("div"); heading.className = "zhihu-note-heading"; const back = document.createElement("button"); back.type = "button"; back.className = "secondary compact"; back.textContent = "← 返回搜索结果"; back.addEventListener("click", () => { preview.remove(); $("zhihuResearchToolbar").hidden = false; }); const headingText = document.createElement("h4"); headingText.textContent = "整合后的学习笔记（置顶）"; heading.append(back, headingText);
+    const title = document.createElement("h3"); title.textContent = state.researchNoteDraft.title;
+    const body = document.createElement("div"); body.className = "zhihu-research-note-content"; renderRichText(body, state.researchNoteDraft.content);
+    const save = document.createElement("button"); save.type = "button"; save.className = "primary"; save.textContent = "保存到笔记";
+    save.addEventListener("click", () => { closeImportSheet(); openNoteSheet(null); $("noteTitle").value = state.researchNoteDraft.title; renderRichText($("noteBody"), state.researchNoteDraft.content); showToast(`已生成整合笔记（${data.source_count || items.length} 条参考来源），请选择分类后保存`); });
+    preview.append(heading, title, body, save); $("zhihuSearchResults").prepend(preview);
+    $("zhihuResearchToolbar").hidden = true;
+    showToast("整合笔记已生成，下面保留原始知乎文章供核对");
+  }).catch((error) => showToast(error.message || "知乎资料整合失败，请稍后重试")).finally(() => { button.disabled = false; button.textContent = "整合为学习笔记"; });
+}
+
+function toggleZhihuSelectAll() {
+  const checks = [...document.querySelectorAll(".zhihu-research-check")];
+  const shouldSelect = state.zhihuResearchItems.length < Math.min(6, checks.length);
+  checks.forEach((check) => { if (check.checked !== shouldSelect) check.click(); });
+  $("toggleZhihuSelectAll").textContent = shouldSelect ? "取消全选" : "全选";
 }
 
 function activatePanel(panelId) {
@@ -817,14 +945,14 @@ function activateAppPage(pageId) {
 // 由 applyStorageScope(uid) 重建；未登录时是空 scope 的默认值。
 let storageKeys = buildStorageKeys("");
 function readHistoryKey(key) { try { const items = JSON.parse(localStorage.getItem(key)); return Array.isArray(items) ? items : []; } catch { return []; } }
-function normalizeHistoryItem(item) { const rawType = String(item.type || item.mode || ""); const type = rawType.includes("跨") || rawType.toLowerCase().includes("discover") ? "跨学科理解" : "读懂它"; const timestamp = typeof item.timestamp === "number" ? new Date(item.timestamp < 100000000000 ? item.timestamp * 1000 : item.timestamp).toISOString() : (item.timestamp || new Date().toISOString()); return { id: item.id || makeId("history"), type, input: item.input || item.text || "", sessionId: item.sessionId || item.session_id || "", timestamp, fullResponse: item.fullResponse || item.response || null }; }
-function migrateHistory() { const legacy = readHistoryKey(storageKeys.history); const explain = readHistoryKey(storageKeys.explainHistory); const discover = readHistoryKey(storageKeys.discoverHistory); if (legacy.length || explain.length || discover.length) { const merged = [...legacy, ...explain, ...discover].map(normalizeHistoryItem); const unique = [...new Map(merged.map((item) => [item.sessionId || item.id, item])).values()]; localStorage.setItem(storageKeys.explainHistory, JSON.stringify(unique.filter((item) => item.type === "读懂它"))); localStorage.setItem(storageKeys.discoverHistory, JSON.stringify(unique.filter((item) => item.type === "跨学科理解"))); if (legacy.length) localStorage.removeItem(storageKeys.history); } }
-function getHistory() { migrateHistory(); return [...readHistoryKey(storageKeys.explainHistory), ...readHistoryKey(storageKeys.discoverHistory)].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); }
-function saveHistory(items) { localStorage.setItem(storageKeys.explainHistory, JSON.stringify(items.filter((item) => item.type === "读懂它").slice(0, 100))); localStorage.setItem(storageKeys.discoverHistory, JSON.stringify(items.filter((item) => item.type === "跨学科理解").slice(0, 100))); }
+function normalizeHistoryItem(item) { const rawType = String(item.type || item.mode || ""); const type = rawType.includes("知乎") || rawType.toLowerCase().includes("research") ? "知乎研究" : rawType.includes("跨") || rawType.toLowerCase().includes("discover") ? "跨学科理解" : "读懂它"; const timestamp = typeof item.timestamp === "number" ? new Date(item.timestamp < 100000000000 ? item.timestamp * 1000 : item.timestamp).toISOString() : (item.timestamp || new Date().toISOString()); return { id: item.id || makeId("history"), type, input: item.input || item.text || "", sessionId: item.sessionId || item.session_id || "", timestamp, fullResponse: item.fullResponse || item.response || null }; }
+function migrateHistory() { const legacy = readHistoryKey(storageKeys.history); const explain = readHistoryKey(storageKeys.explainHistory); const discover = readHistoryKey(storageKeys.discoverHistory); const research = readHistoryKey(storageKeys.researchHistory); if (legacy.length || explain.length || discover.length || research.length) { const merged = [...legacy, ...explain, ...discover, ...research].map(normalizeHistoryItem); const unique = [...new Map(merged.map((item) => [item.sessionId || item.id, item])).values()]; localStorage.setItem(storageKeys.explainHistory, JSON.stringify(unique.filter((item) => item.type === "读懂它"))); localStorage.setItem(storageKeys.discoverHistory, JSON.stringify(unique.filter((item) => item.type === "跨学科理解"))); localStorage.setItem(storageKeys.researchHistory, JSON.stringify(unique.filter((item) => item.type === "知乎研究"))); if (legacy.length) localStorage.removeItem(storageKeys.history); } }
+function getHistory() { migrateHistory(); return [...readHistoryKey(storageKeys.explainHistory), ...readHistoryKey(storageKeys.discoverHistory), ...readHistoryKey(storageKeys.researchHistory)].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); }
+function saveHistory(items) { localStorage.setItem(storageKeys.explainHistory, JSON.stringify(items.filter((item) => item.type === "读懂它").slice(0, 100))); localStorage.setItem(storageKeys.discoverHistory, JSON.stringify(items.filter((item) => item.type === "跨学科理解").slice(0, 100))); localStorage.setItem(storageKeys.researchHistory, JSON.stringify(items.filter((item) => item.type === "知乎研究").slice(0, 100))); }
 function historyType() { return state.activeKnowledgePanel === "discoverPanel" ? "跨学科理解" : "读懂它"; }
 function addHistory(type, input, sessionId, fullResponse = null) { if (!sessionId) return; const items = getHistory().filter((item) => item.sessionId !== sessionId); items.unshift({ id: makeId("history"), type, input, sessionId, timestamp: new Date().toISOString(), fullResponse }); saveHistory(items); renderHistoryMemory(); }
 function renderHistoryMemory() { const box = $("historyMemoryList"); if (!box) return; box.replaceChildren(); const type = historyType(); const items = getHistory().filter((item) => item.type === type).slice(0, 5); if (!items.length) { box.textContent = "暂无历史记忆，去探索第一个概念吧～"; return; } items.forEach((item) => { const row = document.createElement("button"); row.type = "button"; row.className = `history-memory-item ${type === "读懂它" ? "explain" : "discover"}`; row.textContent = `[${type}] ${String(item.input).slice(0, 34)} · ${new Date(item.timestamp).toLocaleDateString("zh-CN")}`; row.addEventListener("click", () => restoreHistory(item)); box.append(row); }); }
-function restoreHistory(item) { closeHistory(); const discover = item.type === "跨学科理解"; state.activeKnowledgePanel = discover ? "discoverPanel" : "explainPanel"; showKnowledgeLauncher(state.activeKnowledgePanel); revealKnowledgeEditor(); const panel = $(state.activeKnowledgePanel); const inputArea = panel?.querySelector(".input-area"); if (inputArea) inputArea.hidden = true; if (discover) { state.discoverSessionId = item.sessionId; discoverDraftText = item.input; $("discoverText").value = item.input; if (item.fullResponse) { const response = item.fullResponse; $("discoverTitle").textContent = `发现同源 · ${response.concept?.name || item.input}`; renderRichText($("discoverReport"), response.report || "同源分析已完成。"); renderCandidates(response); $("discoverResult").hidden = false; } else { $("discoverResult").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } else { state.explainSessionId = item.sessionId; explainDraftText = item.input; $("explainText").value = item.input; state.explainConversation = []; $("conversation").replaceChildren(); if (item.fullResponse) { const response = item.fullResponse; $("conceptName").textContent = response.concept?.name || "分析结果"; $("explainUserMessage").textContent = item.input; renderCoreAnswer(response.explanation || ""); renderLogicProfile(response.logic_profile); (response.conversation || []).forEach((message) => addMessage(message.role, message.content)); $("explainResult").hidden = false; $("followUp").hidden = false; } else { $("explainResult").hidden = true; $("followUp").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } window.scrollTo({ top: 0, behavior: "smooth" }); }
+function restoreHistory(item) { closeHistory(); if (item.type === "知乎研究") { const response = item.fullResponse || {}; openNoteSheet(null); $("noteTitle").value = response.title || item.input || "知乎研究笔记"; $("noteBody").innerHTML = response.content || ""; showToast("已恢复这次知乎研究，可选择分类后保存"); return; } const discover = item.type === "跨学科理解"; state.activeKnowledgePanel = discover ? "discoverPanel" : "explainPanel"; showKnowledgeLauncher(state.activeKnowledgePanel); revealKnowledgeEditor(); const panel = $(state.activeKnowledgePanel); const inputArea = panel?.querySelector(".input-area"); if (inputArea) inputArea.hidden = true; if (discover) { state.discoverSessionId = item.sessionId; discoverDraftText = item.input; $("discoverText").value = item.input; if (item.fullResponse) { const response = item.fullResponse; $("discoverTitle").textContent = `发现同源 · ${response.concept?.name || item.input}`; renderRichText($("discoverReport"), response.report || "同源分析已完成。"); renderCandidates(response); $("discoverResult").hidden = false; } else { $("discoverResult").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } else { state.explainSessionId = item.sessionId; explainDraftText = item.input; $("explainText").value = item.input; state.explainConversation = []; $("conversation").replaceChildren(); if (item.fullResponse) { const response = item.fullResponse; $("conceptName").textContent = response.concept?.name || "分析结果"; $("explainUserMessage").textContent = item.input; renderCoreAnswer(response.explanation || ""); renderLogicProfile(response.logic_profile); (response.conversation || []).forEach((message) => addMessage(message.role, message.content)); $("explainResult").hidden = false; $("followUp").hidden = false; } else { $("explainResult").hidden = true; $("followUp").hidden = true; showToast("这条历史没有保存完整结果，请重新发起查询"); } } window.scrollTo({ top: 0, behavior: "smooth" }); }
 function renderHistory() { const box = $("historyList"); box.replaceChildren(); document.querySelectorAll(".history-filter").forEach((button) => { const active = button.dataset.historyType === historyFilterType; button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active)); }); const items = getHistory().filter((item) => item.type === historyFilterType); if (!items.length) { box.textContent = `暂无${historyFilterType}历史记录`; return; } items.forEach((item) => { const row = document.createElement("article"); row.className = "history-item"; const open = document.createElement("button"); open.className = "history-open"; open.type = "button"; const type = document.createElement("strong"); type.className = "history-type"; type.textContent = `[${item.type}]`; const text = document.createElement("span"); text.className = "history-summary"; text.textContent = String(item.input).slice(0, 80); open.append(type, text); open.addEventListener("click", () => restoreHistory(item)); const remove = document.createElement("button"); remove.type = "button"; remove.className = "history-remove"; remove.textContent = "⋮"; remove.setAttribute("aria-label", "更多操作"); remove.addEventListener("click", (event) => { event.stopPropagation(); pendingHistoryDeleteId = item.id; $("sheetBackdrop").hidden = false; $("historyDeleteConfirm").hidden = false; document.body.classList.add("sheet-open"); }); const time = document.createElement("small"); time.textContent = new Date(item.timestamp).toLocaleString("zh-CN"); row.append(open, remove, time); box.append(row); }); }
 function openHistory() { historyFilterType = "跨学科理解"; renderHistory(); $("sheetBackdrop").hidden = false; $("historySheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeHistory() { $("historySheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
@@ -1019,6 +1147,7 @@ async function startNoteReview(note) {
   noteReviewSession = `note_review_${Date.now()}`;
   $("noteReviewConfirm").hidden = true;
   $("noteReviewPage").hidden = false;
+  document.body.classList.add("note-review-open");
   document.querySelectorAll(".fullscreen-page").forEach((p) => { if (p.id !== "noteReviewPage") p.hidden = true; });
   $("noteReviewSelect").hidden = true;
   $("noteReviewChat").hidden = false;
@@ -1171,6 +1300,7 @@ function closeReviewRecord() { currentReviewRecord = null; openNoteReviewHistory
 
 function openNoteReviewPage() {
   document.querySelectorAll(".fullscreen-page").forEach((p) => { p.hidden = p.id !== "noteReviewPage"; });
+  document.body.classList.add("note-review-open");
   // 清掉上一次可能残留的弹层与状态，避免串到这一次
   $("noteReviewConfirm").hidden = true;
   $("noteReviewDeleteConfirm").hidden = true;
@@ -1278,6 +1408,9 @@ function previewAttachment(file) { $("attachmentPreviewTitle").textContent = fil
 function openProfileSheet() { const user = getUser(); pendingAvatarFile = null; pendingAvatarUrl = user.avatarUrl || ""; $("profileNicknameInput").value = user.nickname; $("profileSignatureInput").value = user.signature; $("profileAvatarPreview").src = pendingAvatarUrl; $("profileAvatarPreview").closest(".avatar-picker").classList.toggle("has-preview", Boolean(pendingAvatarUrl)); $("sheetBackdrop").hidden = false; $("profileSheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeProfileSheet() { $("profileSheet").hidden = true; $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); }
 function openSettingsSheet() { $("sheetBackdrop").hidden = false; $("settingsSheet").hidden = false; document.body.classList.add("sheet-open"); }
+function openZhihuLibrary() { $("sheetBackdrop").hidden = false; $("zhihuConsentSheet").hidden = false; document.body.classList.add("sheet-open"); }
+function closeZhihuConsent() { $("zhihuConsentSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
+function confirmZhihuConsent() { closeZhihuConsent(); request("/api/zhihu/oauth/authorize", null, { method: "GET" }).then((data) => { if (data.url) window.open(data.url, "_blank", "noopener"); }).catch((error) => showToast(error.message || "知乎 OAuth 尚未配置，请联系管理员")); }
 function closeSettingsSheet() { $("settingsSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
 function openAboutSheet() { closeSettingsSheet(); $("sheetBackdrop").hidden = false; $("aboutSheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeAboutSheet() { $("aboutSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
@@ -1565,6 +1698,16 @@ $("settingsButton").addEventListener("click", openSettingsSheet);
 $("settingsSheetClose").addEventListener("click", closeSettingsSheet);
 $("accountSettingsButton").addEventListener("click", () => { closeSettingsSheet(); openProfileSheet(); });
 $("aboutKnowledgeButton").addEventListener("click", openAboutSheet);
+$("toggleZhihuSelectAll")?.addEventListener("click", toggleZhihuSelectAll);
+$("zhihuLibraryCard")?.addEventListener("click", openZhihuLibrary);
+$("zhihuLibraryCard")?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openZhihuLibrary(); } });
+$("zhihuConsentClose")?.addEventListener("click", closeZhihuConsent);
+$("zhihuConsentCancel")?.addEventListener("click", closeZhihuConsent);
+$("zhihuConsentConfirm")?.addEventListener("click", confirmZhihuConsent);
+$("connectZhihuButton")?.addEventListener("click", async () => {
+  try { const data = await request("/api/zhihu/oauth/authorize", null, { method: "GET" }); if (data.url) window.open(data.url, "_blank", "noopener"); }
+  catch (error) { showToast(error.message || "知乎 OAuth 尚未配置，请联系管理员"); }
+});
 $("aboutSheetClose").addEventListener("click", closeAboutSheet);
 $("brandLogo")?.addEventListener("error", (event) => { event.currentTarget.hidden = true; });
 document.addEventListener("click", (event) => { if (!$("toast").hidden && !$("notificationButton").contains(event.target) && !$("toast").contains(event.target)) { $("toast").hidden = true; window.clearTimeout(toastTimer); } });
@@ -1575,7 +1718,7 @@ $("confirmHistoryDelete").addEventListener("click", () => { if (pendingHistoryDe
 document.querySelectorAll(".history-filter").forEach((button) => button.addEventListener("click", () => { historyFilterType = button.dataset.historyType; renderHistory(); }));
 $("clearHistory").addEventListener("click", () => { saveHistory(getHistory().filter((item) => item.type !== historyFilterType)); renderHistory(); renderHistoryMemory(); showToast(`${historyFilterType}历史记录已清空`); });
 $("historyMemoryMore").addEventListener("click", openHistory);
-$("clearCurrentHistory").addEventListener("click", () => { const type = historyType(); saveHistory(getHistory().filter((item) => item.type !== type)); renderHistoryMemory(); showToast("当前模式历史已清空"); });
+$("clearCurrentHistory").addEventListener("click", () => { const type = historyFilterType; saveHistory(getHistory().filter((item) => item.type !== type)); renderHistory(); renderHistoryMemory(); showToast("当前模式历史已清空"); });
 $("backToTop").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
 window.addEventListener("scroll", () => $("backToTop").classList.toggle("visible", window.scrollY > 300), { passive: true });
 $("sheetBackdrop").addEventListener("click", () => { closeMappingSheet(); closeSaveCardSheet(); closeNoteSheet(); closeCardSheet(); closeImportSheet(); closeBookSheet(); closeProfileSheet(); closeSettingsSheet(); closeAboutSheet(); closeNoteActionSheet(); closeFolderActionSheet(); closeTemplateSheet(); closeNoteCreateSheet(); closeFolderSheet(); $("noteMoveSheet").hidden = true; $("batchMoveSheet").hidden = true; $("batchDeleteConfirm").hidden = true; $("cardDeleteConfirm").hidden = true; $("historyDeleteConfirm").hidden = true; $("reviewCardActionSheet").hidden = true; $("reviewDeleteConfirm").hidden = true; });
@@ -1588,7 +1731,7 @@ document.querySelectorAll("[data-launch-import]").forEach((button) => button.add
   state.importPanelTarget = state.activeKnowledgePanel;
   state.importTarget = state.importPanelTarget === "discoverPanel" ? "discoverText" : "explainText";
   openImportSheet("importSheet");
-  const panels = { manual: "manualImportPanel", image: "imageImportPanel" };
+  const panels = { manual: "manualImportPanel", image: "imageImportPanel", zhihu: "zhihuSearchPanel" };
   showImportPanel(panels[button.dataset.launchImport]);
   if (button.dataset.launchImport === "image") $("imageImportFile").click();
 }));
@@ -1597,6 +1740,17 @@ $("importSheetClose").addEventListener("click", closeImportSheet);
 document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => showImportPanel(button.dataset.importPanel)));
 document.querySelectorAll(".import-back").forEach((button) => button.addEventListener("click", () => showImportPanel(null)));
 $("confirmManualImport").addEventListener("click", () => { const text = $("manualImportText").value.trim(); if (!text) return; placeImportedText(text, "内容已放入输入框", state.importPanelTarget); });
+$("confirmZhihuSearch").addEventListener("click", searchZhihu);
+$("zhihuSearchQuery").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); searchZhihu(); } });
+document.querySelectorAll("[data-zhihu-mode]").forEach((button) => button.addEventListener("click", () => {
+  state.zhihuMode = button.dataset.zhihuMode;
+  document.querySelectorAll("[data-zhihu-mode]").forEach((item) => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-selected", String(active)); });
+  state.zhihuResearchItems = []; $("zhihuSearchResults").replaceChildren(); $("zhihuResearchToolbar").hidden = true;
+  $("zhihuSearchFeedback").textContent = state.zhihuMode === "research" ? "输入一个主题，我会从核心概念、机制原理和争议边界三个角度搜索。" : "例如：负反馈为什么能让系统稳定？结果来自知乎开放平台。";
+  $("confirmZhihuSearch").textContent = state.zhihuMode === "research" ? "研究" : "搜索";
+}));
+$("useZhihuResearch").addEventListener("click", useZhihuResearch);
+$("cancelLoading").addEventListener("click", cancelDiscover);
 $("imageImportFile").addEventListener("change", (event) => importImage(event.target.files?.[0]));
 
 $("backToShelf").addEventListener("click", () => { $("bookDetail").hidden = true; $("bookList").hidden = false; $("newBookButton").hidden = false; });
@@ -1754,6 +1908,7 @@ $("closeNoteReview")?.addEventListener("click", () => {
   if (!$("noteReviewHistory").hidden) { openNoteReviewPage(); return; }
   requestReviewSummary();
   $("noteReviewPage").hidden = true;
+  document.body.classList.remove("note-review-open");
   activateAppPage("petPage");
 });
 $("noteReviewHistoryButton")?.addEventListener("click", openNoteReviewHistory);

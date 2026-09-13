@@ -15,6 +15,15 @@ class Retriever:
 
     MIN_RETRIEVAL_SCORE = 0.12
 
+    # Mechanism aliases bridge everyday wording and curated disciplinary terms.
+    # They are deliberately narrow: each group describes the same control
+    # structure, not merely related subject matter.
+    TERM_GROUPS = (
+        {"负反馈", "反馈控制", "自我纠错", "纠偏", "闭环控制", "误差修正"},
+        {"稳态", "动态平衡", "稳定", "调节", "自稳态"},
+        {"扰动", "干扰", "波动", "偏差", "误差"},
+    )
+
     WEIGHTS = {
         "concept": 0.30,
         "keyword": 0.30,
@@ -33,7 +42,14 @@ class Retriever:
     @classmethod
     def _contains(cls, haystack: object, needle: object) -> bool:
         left, right = cls._norm(haystack), cls._norm(needle)
-        return bool(left and right and (right in left or left in right))
+        if not left or not right:
+            return False
+        if right in left or left in right:
+            return True
+        return any(
+            any(term in left for term in group) and any(term in right for term in group)
+            for group in cls.TERM_GROUPS
+        )
 
     @classmethod
     def _query_parts(cls, query: str | dict[str, Any]) -> tuple[str, LogicProfile | None]:
@@ -52,7 +68,13 @@ class Retriever:
 
     @classmethod
     def _keyword_score(cls, candidate: CandidateConcept, query_text: str, keywords: Sequence[str] | None) -> float:
+        # Use both model-extracted terms and explicit words in the source. A
+        # three-term LLM summary can omit an obvious anchor such as “负反馈”.
         requested = [cls._norm(item) for item in keywords or [] if cls._norm(item)]
+        requested.extend(
+            term for group in cls.TERM_GROUPS for term in group
+            if term in cls._norm(query_text) and term not in requested
+        )
         if requested:
             matched = sum(any(cls._contains(candidate_kw, item) for candidate_kw in candidate.keywords) for item in requested)
             return matched / len(requested)
@@ -94,6 +116,9 @@ class Retriever:
             score = self._score(candidate, query_text, keywords, domain, profile)
             lexical_score = self._score(candidate, query_text, keywords, domain, None)
             scored.append((candidate, score, lexical_score))
+        # Require at least one explainable lexical/mechanism anchor, then allow
+        # the logic profile to rank cross-domain candidates. Alias groups above
+        # make that anchor robust to wording such as “自我纠错” vs “负反馈”.
         if not any(lexical_score >= self.MIN_RETRIEVAL_SCORE for _, _, lexical_score in scored):
             return []
         results = [

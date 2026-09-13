@@ -116,6 +116,26 @@ def test_learning_report_retries_malformed_json(monkeypatch: pytest.MonkeyPatch)
     assert "上一次输出无法解析" in calls[1][0]
 
 
+def test_high_score_without_valid_mapping_is_review_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = """{
+      "source_primer":"来源入门","candidate_primer":"候选入门","mechanism_summary":"共享反馈结构",
+      "intersection_lesson":"两者都根据状态变化形成反向调节。",
+      "target_domain_lessons":[],"transferable_knowledge":[],"new_knowledge":[],"understanding_checks":[],
+      "mapping_evidence":[],"valid_conditions":[],"failure_boundaries":["实现机制不同"],
+      "known_differences":["领域对象不同"],"prohibited_claims":[],"learning_next_steps":[]
+    }"""
+    monkeypatch.setattr(tools.feature_extractor, "llm", lambda *args, **kwargs: payload)
+    source = EvidenceSource(id="source-1", title="Reference", publisher_or_author="Author", url_or_identifier="id")
+    candidate = CandidateConcept(id="eco", concept="生态稳态", domain="生态学", logic_profile=profile(), sources=[source])
+    report = tools.build_learning_report(
+        "负反馈", Concept(name="负反馈"), profile(), candidate,
+        HomologyResult(candidate_id="eco", score=0.98, threshold=config.THRESHOLD),
+        MappingResult(candidate_id="eco", mapping={}),
+    )
+    assert report.verdict == "NEEDS_REVIEW"
+    assert "结构分数已通过" in report.verdict_reason
+
+
 def test_calculate_homonomy_uses_core_vectors(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = {}
     def fake(a, b, method=None):

@@ -41,7 +41,7 @@ TIMEOUT  = int(os.environ.get("LC_TIMEOUT", "180"))
 THINKING = os.environ.get("LC_THINKING", "none")
 SAMPLES  = int(os.environ.get("LC_SAMPLES", "3"))            # LLM 采样次数（取均值去噪）
 METHOD   = os.environ.get("LC_METHOD", "cosine")             # cosine | wasserstein
-THRESHOLD = float(os.environ.get("LC_THRESHOLD", "0.85"))    # 触发实体映射的阈值
+THRESHOLD = float(os.environ.get("LC_THRESHOLD", "0.72"))    # 触发实体映射的阈值
 GAMMA_W1  = float(os.environ.get("LC_GAMMA", "0.06"))        # W1 副视角指数系数
 
 # 账号登录态 token 的 HMAC 签名密钥。

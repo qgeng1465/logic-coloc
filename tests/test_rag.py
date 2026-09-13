@@ -145,3 +145,41 @@ def test_profile_alone_does_not_force_unrelated_candidate() -> None:
         "logic_profile": _record()["logic_profile"],
     }
     assert Retriever(Corpus().load()).retrieve(query) == []
+
+
+def test_profile_recall_is_not_vetoed_by_cross_domain_wording() -> None:
+    query = {
+        "text": "机器遇到磨损、参数漂移和外界扰动时，根据偏差不断自我纠错",
+        "logic_profile": {
+            "system_closure": 0.92,
+            "causal_chain_length": 0.75,
+            "negative_feedback_strength": 0.96,
+            "randomness_entropy": 0.25,
+            "zero_sum_resource_level": 0.1,
+        },
+    }
+    results = Retriever(Corpus().load()).retrieve(query, keywords=["自我纠错", "扰动", "偏差"], top_k=5)
+    ids = {item.id for item in results}
+    assert "immune_negative_feedback" in ids
+    assert "ecosystem_homeostasis" in ids
+
+
+def test_feedback_aliases_recall_negative_feedback_without_profile() -> None:
+    results = Retriever(Corpus().load()).retrieve("系统根据误差不断自我纠错", top_k=5)
+    assert any(item.id == "immune_negative_feedback" for item in results)
+
+
+def test_explicit_feedback_anchor_survives_unhelpful_extracted_terms() -> None:
+    profile = {
+        "system_closure": 0.9,
+        "causal_chain_length": 0.75,
+        "negative_feedback_strength": 0.95,
+        "randomness_entropy": 0.25,
+        "zero_sum_resource_level": 0.1,
+    }
+    results = Retriever(Corpus().load()).retrieve(
+        {"text": "负反馈让机器根据输出偏差自我纠错", "logic_profile": profile},
+        keywords=["机器磨损", "参数漂移", "不确定性"],
+        top_k=5,
+    )
+    assert any(item.id == "immune_negative_feedback" for item in results)

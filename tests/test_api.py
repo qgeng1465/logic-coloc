@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from logic_coloc.agents.schemas import CritiqueResult, Concept, DiscoverLearningReport, HomologyResult, Intent, KnowledgeContext, LogicProfile, MappingResult
-from logic_coloc.api import app, attachment_text, auth_store, card_store, library_store, note_store, review_store, user_paths
+from logic_coloc.api import app, attachment_text, auth_store, card_store, library_store, note_store, review_store, routes, user_paths
 from logic_coloc.api.routes import get_service
 from logic_coloc.api.service import LogicColocService
 from logic_coloc.rag.schemas import CandidateConcept
@@ -20,6 +20,93 @@ from logic_coloc.sessions.manager import SessionManager
 
 TEST_USERNAME = "tester"
 TEST_PASSWORD = "hunter2"
+
+
+def test_zhihu_search_requires_access_secret(runtime, monkeypatch) -> None:
+    client, _, _ = runtime
+    monkeypatch.delenv("ZHIHU_ACCESS_SECRET", raising=False)
+    response = client.post("/api/zhihu/search", json={"query": "负反馈"})
+    assert response.status_code == 503
+
+
+def test_zhihu_search_maps_official_response(runtime, monkeypatch) -> None:
+    client, _, _ = runtime
+    monkeypatch.setenv("ZHIHU_ACCESS_SECRET", "test-secret")
+    class FakeResponse:
+        ok = True
+        def json(self):
+            return {"Code": 0, "Data": {"Items": [{"Title": "测试问题", "ContentText": "知乎摘要内容", "Url": "https://www.zhihu.com/question/123", "ContentType": "Question", "AuthorName": "测试作者", "VoteUpCount": 9, "CommentCount": 2}]}}
+
+    routes._zhihu_search_cache.clear()
+    monkeypatch.setattr(routes.requests, "get", lambda *args, **kwargs: FakeResponse())
+    response = client.post("/api/zhihu/search", json={"query": "负反馈", "count": 5})
+    assert response.status_code == 200
+    assert response.json()["items"][0]["title"] == "测试问题"
+    assert response.json()["items"][0]["summary"] == "知乎摘要内容"
+
+
+def test_zhihu_search_reuses_successful_cached_result(runtime, monkeypatch) -> None:
+    client, _, _ = runtime
+    monkeypatch.setenv("ZHIHU_ACCESS_SECRET", "test-secret")
+    monkeypatch.setattr(routes, "_wait_for_zhihu_slot", lambda: None)
+    routes._zhihu_search_cache.clear()
+    calls = []
+
+    class FakeResponse:
+        ok = True
+
+        def json(self):
+            return {"Code": 0, "Data": {"Items": [{"Title": "缓存结果", "Url": "https://www.zhihu.com/question/1"}]}}
+
+    def fake_get(*args, **kwargs):
+        calls.append(1)
+        return FakeResponse()
+
+    monkeypatch.setattr(routes.requests, "get", fake_get)
+    assert client.post("/api/zhihu/search", json={"query": "缓存测试", "count": 5}).status_code == 200
+    assert client.post("/api/zhihu/search", json={"query": "缓存测试", "count": 5}).status_code == 200
+    assert len(calls) == 1
+
+
+def test_zhihu_rate_limit_is_reported_as_429(runtime, monkeypatch) -> None:
+    client, _, _ = runtime
+    monkeypatch.setenv("ZHIHU_ACCESS_SECRET", "test-secret")
+    monkeypatch.setattr(routes, "_wait_for_zhihu_slot", lambda: None)
+    routes._zhihu_search_cache.clear()
+
+    class FakeResponse:
+        ok = True
+
+        def json(self):
+            return {"Code": 30001, "Message": "too many requests"}
+
+    monkeypatch.setattr(routes.requests, "get", lambda *args, **kwargs: FakeResponse())
+    response = client.post("/api/zhihu/search", json={"query": "负反馈"})
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "3"
+
+
+def test_discover_cancel_can_arrive_before_discover_request(runtime) -> None:
+    client, _, _ = runtime
+    request_id = "cancel-before-start"
+    response = client.post(f"/api/discover/{request_id}/cancel")
+    assert response.status_code == 200
+    assert response.json() == {"code": 0, "cancelled": True}
+
+
+def test_discover_event_preserves_early_cancel_signal() -> None:
+    import threading
+    import time
+
+    key = ("test-user", "early-cancel")
+    early = threading.Event()
+    early.set()
+    routes._discover_cancel_events[key] = (early, time.monotonic())
+    try:
+        assert routes._discover_event(*key) is early
+        assert early.is_set()
+    finally:
+        routes._discover_cancel_events.pop(key, None)
 
 
 def profile() -> LogicProfile:

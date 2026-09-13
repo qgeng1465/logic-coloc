@@ -285,14 +285,14 @@ h3 { font-size: 15px; margin: 24px 0 12px; }
 .candidate[open] > .candidate-summary { border-bottom: 1px solid var(--line); }
 .candidate-content { padding: 0 16px 18px; }
 .candidate-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
-.candidate h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.candidate h3 { margin: 0; font-size: 19px; line-height: 1.4; overflow-wrap: anywhere; }
 /* 候选卡内的正文/标签整体上调一档：12px 的中文长段落读起来偏小 */
-.domain-pill { display: inline-block; margin-top: 10px; border-radius: var(--r-pill); background: var(--brand-100); color: var(--brand-800); padding: 4px 10px; font-size: 12px; }
-.reliability { font-size: 13px; color: var(--muted); white-space: nowrap; border-radius: var(--r-pill); background: var(--brand-50); padding: 4px 9px; }
+.domain-pill { display: inline-block; margin-top: 12px; border-radius: var(--r-pill); background: var(--brand-100); color: var(--brand-800); padding: 5px 12px; font-size: 15px; line-height: 1.35; }
+.reliability { font-size: 15px; line-height: 1.35; color: var(--muted); white-space: nowrap; border-radius: var(--r-pill); background: var(--brand-50); padding: 5px 10px; }
 .reliability.yes { color: var(--brand-700); font-weight: 700; }
 .scores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-.score { background: var(--brand-50); padding: 9px 11px; font-size: 13px; border-radius: var(--r-sm); }
-.score strong { display: block; margin-top: 4px; font-size: 16px; }
+.score { background: var(--brand-50); padding: 10px 12px; font-size: 16px; line-height: 1.4; border-radius: var(--r-sm); }
+.score strong { display: block; margin-top: 5px; font-size: 20px; }
 .score .track { margin-top: 7px; }
 .mapping { margin: 13px 0 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.75; }
 .critique { color: var(--muted); font-size: 13.5px; line-height: 1.7; margin: 12px 0 0; }
@@ -357,9 +357,9 @@ h3 { font-size: 15px; margin: 24px 0 12px; }
 .answer-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
 .secondary.compact { min-height: 38px; padding: 0 15px; font-size: 14px; }
 .profile { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 1px; }
-.expand-label { display: block; margin-top: 10px; color: var(--brand-700); font-size: 13.5px; font-weight: 700; }
+.expand-label { display: block; margin-top: 12px; color: var(--brand-700); font-size: 16px; line-height: 1.45; font-weight: 700; }
 .candidate[open] > .candidate-summary .expand-label { color: var(--muted); }
-.candidate-why { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.candidate-why { margin: 12px 0 0; color: var(--muted); font-size: 16px; line-height: 1.75; }
 .nested-disclosure { margin-top: 18px; border-top: 1px solid var(--line); }
 .nested-disclosure > summary { cursor: pointer; padding: 14px 32px 14px 0; color: var(--brand-700); font-size: 13px; font-weight: 700; position: relative; list-style: none; }
 .nested-disclosure > .nested-content { padding-bottom: 4px; }
@@ -378,6 +378,72 @@ h3 { font-size: 15px; margin: 24px 0 12px; }
 .answer-disclosure > summary { cursor: pointer; list-style: none; color: var(--brand-700); font-size: 13px; font-weight: 700; padding: 13px 0; }
 .answer-disclosure > summary::-webkit-details-marker { display: none; }
 .discover-shortcut, .mapping-sheet-button { width: 100%; margin-top: 12px; }
+
+/* ============================ 知识结果统一可读字号 ============================
+   “读懂它”和“发现同源”共用这套字号下限。详细报告此前散落着大量 12–14px
+   声明，手机上明显偏小；这里用结果区作用域统一覆盖，不影响书架、笔记等紧凑页面。 */
+#explainResult, #discoverResult { font-size: 17px; }
+#explainResult .answer,
+#explainResult .answer p,
+#explainResult .answer li,
+#explainResult .message,
+#discoverResult .candidate-content,
+#discoverResult .candidate-content p,
+#discoverResult .candidate-content li,
+#discoverResult .primer p,
+#discoverResult .report-section p,
+#discoverResult .report-section > ul,
+#discoverResult .report-section > ol,
+#discoverResult .mapping,
+#discoverResult .critique,
+#discoverResult .score-reasons,
+#discoverResult .dimension-row,
+#discoverResult .mapping-row,
+#discoverResult .lesson-content,
+#discoverResult .quiz-answer {
+  font-size: 17px;
+  line-height: 1.8;
+}
+#explainResult .answer h3,
+#explainResult .answer h4,
+#explainResult .message h3,
+#explainResult .message h4,
+#discoverResult .primer h4,
+#discoverResult .report-section h4,
+#discoverResult .mapping-row strong,
+#discoverResult .lesson > strong {
+  font-size: 18px;
+  line-height: 1.5;
+}
+#discoverResult .lesson summary,
+#discoverResult .nested-disclosure > summary,
+#explainResult .answer-disclosure > summary,
+#discoverResult .mapping-sheet-button,
+#discoverResult .detail-accordion-btn {
+  font-size: 17px;
+  line-height: 1.5;
+}
+#discoverResult .verdict { font-size: 17px; line-height: 1.75; }
+#discoverResult .homology-warning,
+#discoverResult .mapping-row small,
+#discoverResult .quiz-answer-button,
+#discoverResult .candidate-chat .chat-status,
+#explainResult .profile-row,
+#explainResult .intent-tag {
+  font-size: 15px;
+  line-height: 1.65;
+}
+#explainResult .knowledge-user { font-size: 17px; line-height: 1.75; }
+#explainResult .profile h3 { font-size: 18px; }
+#explainResult .secondary.compact,
+#explainResult .discover-shortcut,
+#explainResult .chat-row textarea,
+#explainResult .chat-row button,
+#discoverResult .candidate-ask,
+#discoverResult .candidate-chat textarea,
+#discoverResult .candidate-chat button {
+  font-size: 16px;
+}
 .discover-shortcut { margin-bottom: 12px; }
 .dimension-bars { grid-column: 1 / -1; display: grid; gap: 5px; }
 .candidate-fill { background: var(--brand-600); }
@@ -703,6 +769,54 @@ body.auth-open { overflow: hidden; }
 .import-back { border: 0; background: transparent; color: var(--brand-700); padding: 4px 0 8px; font-size: 12px; }
 .import-submit { width: 100%; margin-top: 8px; }
 .import-feedback { margin: 5px 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.zhihu-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.zhihu-search-row input { min-width: 0; }
+.zhihu-search-row .primary { min-width: 76px; white-space: nowrap; }
+.zhihu-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 0 12px; padding: 4px; border-radius: var(--r-pill); background: var(--brand-50); box-shadow: var(--nm-in-1); }
+.zhihu-mode-tabs button { min-height: 42px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 15px; font-weight: 700; }
+.zhihu-mode-tabs button.active { background: var(--brand-700); color: #fff; box-shadow: var(--nm-out-1); }
+.zhihu-setup-help { margin: 8px 0 0; padding: 10px 12px; border-radius: 12px; background: rgba(255, 244, 214, .72); color: #75551e; font-size: 12px; line-height: 1.55; }
+.zhihu-setup-help a { color: var(--brand-700); font-weight: 700; }
+.zhihu-search-results { display: grid; gap: 12px; max-height: 48vh; margin-top: 12px; overflow-y: auto; padding: 3px; }
+.zhihu-result-card { display: grid; gap: 7px; padding: 14px; border: 1px solid var(--nm-edge, var(--line)); border-radius: var(--r-lg); background: rgba(255,255,255,.78); box-shadow: var(--sh-1); }
+.zhihu-result-card:has(.zhihu-research-check) { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+.zhihu-result-card:has(.zhihu-research-check) > strong,
+.zhihu-result-card:has(.zhihu-research-check) > small,
+.zhihu-result-card:has(.zhihu-research-check) > p,
+.zhihu-result-card:has(.zhihu-research-check) > .zhihu-result-actions { grid-column: 2; }
+.zhihu-result-card.selected { border-color: var(--brand-600); background: var(--brand-50); }
+.zhihu-research-check { grid-row: 1 / 6; width: 22px; height: 22px; margin: 1px 5px 0 0; accent-color: var(--brand-700); }
+.zhihu-angle { grid-column: 2; width: max-content; padding: 3px 9px; border-radius: var(--r-pill); background: var(--brand-100); color: var(--brand-800); font-size: 15px; font-weight: 700; }
+.zhihu-result-card strong { line-height: 1.45; }
+.zhihu-result-card small { color: var(--muted); }
+.zhihu-result-card p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--ink-soft, var(--muted)); line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.zhihu-result-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 3px; }
+.zhihu-result-actions a { color: var(--brand-700); font-size: 13px; text-decoration: none; }
+.zhihu-research-toolbar { position: sticky; bottom: 0; display: grid; gap: 9px; margin-top: 12px; padding: 13px; border: 1px solid var(--hairline); border-radius: var(--r-lg); background: rgba(255,255,255,.94); box-shadow: var(--sh-2); }
+.zhihu-research-toolbar span { color: var(--muted); font-size: 15px; text-align: center; }
+.zhihu-research-toolbar button { width: 100%; }
+.zhihu-research-toolbar { grid-template-columns: 1fr auto; }
+.zhihu-research-toolbar > span { grid-column: 1 / -1; }
+.zhihu-research-toolbar > button:last-child { grid-column: 1 / -1; }
+.zhihu-note-heading { display:flex; align-items:center; gap:10px; }
+.zhihu-note-heading h4 { flex:1; }
+.zhihu-research-note-content h3 { margin: 14px 0 6px; font-size: 18px; color: var(--brand-800); }
+.zhihu-research-note-content ul, .zhihu-research-note-content ol { margin: 6px 0 12px 22px; padding: 0; }
+.zhihu-library-card { position: relative; cursor: pointer; }
+.zhihu-library-card:focus-visible { outline: 3px solid var(--brand-500); outline-offset: 3px; }
+.zhihu-library-card small { display:block; margin-top:4px; color:var(--muted); }
+.kanshan-card-arrow { margin-left:auto; align-self:center; font-size:28px; color:var(--brand-700); }
+.zhihu-consent-sheet p { margin: 8px 0; line-height: 1.65; }
+.zhihu-consent-sheet .muted-copy { color: var(--muted); font-size: 14px; }
+.zhihu-research-note-preview { order: -1; display: grid; gap: 10px; padding: 16px; border: 2px solid var(--brand-400); border-radius: var(--r-lg); background: #fff; box-shadow: var(--sh-2); }
+.zhihu-research-note-preview h4 { margin: 0; color: var(--brand-700); font-size: 16px; }
+.zhihu-research-note-preview h3 { margin: 0; font-size: 20px; line-height: 1.4; }
+.zhihu-research-note-content { max-height: 360px; overflow-y: auto; color: var(--ink); font-size: 16px; line-height: 1.75; }
+.zhihu-research-note-content p { margin: 0 0 8px; }
+.loading-cancel { flex: 0 0 auto; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); background: rgba(255,255,255,.86); color: var(--brand-800); font-size: 15px; font-weight: 700; }
+.local-loading:has(.loading-cancel:not([hidden])) { flex-wrap: wrap; }
+.local-loading:has(.loading-cancel:not([hidden])) .loading-copy { flex: 1 1 calc(100% - 34px); }
+.local-loading:has(.loading-cancel:not([hidden])) .loading-cancel { flex: 1 1 100%; margin-left: 27px; }
 .image-picker { display: grid; place-items: center; gap: 7px; min-height: 150px; margin: 0; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); background: var(--brand-50); color: var(--brand-700); cursor: pointer; }
 .image-picker small { color: var(--muted); font-weight: 400; }
 
@@ -812,6 +926,7 @@ body.auth-open { overflow: hidden; }
 
 /* ============================ 全屏页 ============================ */
 .fullscreen-page { position: fixed; z-index: 40; inset: 0; width: min(430px,100%); margin: 0 auto; overflow-y: auto; background: #EFF6FE; }
+body.note-review-open { overflow: hidden; }
 .fullscreen-page > header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
 .fullscreen-page header button { border: 0; background: transparent; color: var(--brand-700); }
 /* ---- 笔记复盘页：收成一张悬浮的大圆角卡片 ----
@@ -1566,3 +1681,152 @@ textarea:focus, input:focus, .rich-editor:focus {
   overflow-x: hidden;
   box-shadow: 0 8px 32px rgba(74,144,226,.12);
 }
+
+/* ==========================================================================
+   全站可读字号兜底（2026-09-13）
+   --------------------------------------------------------------------------
+   产品内不再使用 8–14px 承载可阅读内容。正文、说明和操作项统一从 15px
+   起步；长篇结果与弹层正文使用 16px。只有通知数字、文件类型和同步状态这类
+   极短角标使用 13px，但仍比旧版的 8–11px 明显可读。
+
+   这组规则刻意放在文件最后：前面各页面保留自己的布局与颜色，这里只负责把
+   历史遗留的小字号统一托高，避免某个深层页面再次漏改。
+   ========================================================================== */
+body { font-size: 16px; }
+/* 浏览器会默认把 <small> 缩成约 13px；显式取消这条 UA 默认规则，避免新页面
+   即使没写专用 class 也悄悄变回小字。 */
+small { font-size: 15px; line-height: 1.55; }
+
+/* 正文、说明、状态、列表及所有可点击文字：最低 15px。 */
+.status,
+.profile-topbar-copy small,
+.history-memory-item,
+.history-type,
+.save-card-status,
+.eyebrow,
+.tab,
+label,
+.input-hint,
+.error,
+.intent-tag,
+.profile-row,
+.message,
+.principle,
+.mapping,
+.critique,
+.homology-warning,
+.score-reasons,
+.verdict,
+.primer h4,
+.report-section h4,
+.primer p,
+.report-section p,
+.report-section > ul,
+.report-section > ol,
+.dimension-row,
+.mapping-row strong,
+.lesson summary,
+.lesson > strong,
+.quiz-answer-button,
+.candidate-chat .chat-status,
+.example-prompt,
+.back-button,
+.result-back span,
+.knowledge-user,
+.secondary.compact,
+.nested-disclosure > summary,
+.answer-disclosure > summary,
+.auth-brand p,
+.mapping-sheet-button,
+.bottom-tab strong,
+.demo-notice,
+.mini-card p,
+.mini-card-status,
+.review-progress,
+.review-filter,
+.answer-guide,
+.review-hint,
+.review-list-card p,
+.review-reset,
+.review-edit,
+.review-manage-toolbar button,
+.points-chip,
+.return-profile,
+#reviewSubtitle,
+.new-note-card span,
+.note-card h3,
+.note-count,
+.note-category,
+.attachment-warning,
+.rich-toolbar button,
+.rich-toolbar select,
+.toolbar-color,
+.import-trigger,
+.import-option > span,
+.import-back,
+.import-feedback,
+.zhihu-setup-help,
+.zhihu-result-actions a,
+.delete-confirm > p,
+.note-action-thumb,
+.template-subtitle,
+.optional-cover-button,
+.template-categories button,
+.template-options button,
+.template-colors span,
+.create-menu button > span,
+.batch-toolbar button,
+.batch-toolbar span,
+.batch-toolbar button span,
+.level-card button,
+.level-card p,
+.record-grid span,
+.record-grid small,
+.kanshan-guide-card p,
+.table-row,
+.toast,
+.history-filter,
+.schedule-curve-card p,
+.schedule-filters-label,
+.review-history-open small,
+.review-history-delete,
+#reviewRecordSummary h4,
+#reviewRecordSummary p,
+#noteReviewList .note-type,
+#noteReviewList .note-card time,
+#noteReviewList .sync-badge,
+.schedule-item strong,
+.schedule-item small,
+.schedule-item .schedule-recent,
+.schedule-item span {
+  font-size: 15px;
+}
+
+/* 弹层与结果中的连续阅读文字再大一档。 */
+.mapping-sheet-card p,
+.mapping-sheet-card small,
+.local-loading {
+  font-size: 16px;
+  line-height: 1.7;
+}
+.local-loading .loading-timer {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* 极短角标也统一到 15px，不留“角标可以继续小”的例外。 */
+.notification-badge,
+.local-card-badge,
+.note-card time,
+.note-type,
+.sync-badge,
+.note-thumbnail.pdf,
+.template-cover span,
+.template-cover small {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.notification-badge { min-width: 24px; height: 24px; padding: 0 6px; }
+
+/* SVG 坐标文字同样遵守 15px 下限。 */
+.schedule-curve text { font-size: 15px; }

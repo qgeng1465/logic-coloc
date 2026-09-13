@@ -107,6 +107,8 @@ class DiscoverRequest(BaseModel):
     text: str
     session_id: str | None = None
     top_k: int = Field(default=5, ge=1, le=50)
+    # 前端生成的一次性任务标识，用于在用户取消时通知后端停止后续阶段。
+    request_id: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
 
     _validate_required_text = field_validator("text", "session_id")(_require_non_blank)
 
@@ -150,6 +152,68 @@ class OCRResponse(BaseModel):
 
     code: int = 0
     text: str
+
+
+class ZhihuSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    count: int = Field(default=5, ge=1, le=10)
+
+    _validate_query = field_validator("query")(_require_non_blank)
+
+
+class ZhihuSearchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    title: str = ""
+    summary: str = ""
+    content_type: str = ""
+    author_name: str = ""
+    vote_up_count: int = 0
+    comment_count: int = 0
+
+
+class ZhihuSearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: int = 0
+    items: list[ZhihuSearchItem] = Field(default_factory=list)
+
+
+class ZhihuResearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    items: list[ZhihuSearchItem] = Field(min_length=2, max_length=6)
+
+    _validate_topic = field_validator("topic")(_require_non_blank)
+
+
+class ZhihuResearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: int = 0
+    title: str
+    content: str
+    source_count: int = 0
+
+class ZhihuLibraryItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str = ""
+    title: str = ""
+    url: str = ""
+    summary: str = ""
+    author_name: str = ""
+    source_type: str = "favorite"
+    saved_at: str = ""
+    categories: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+class ZhihuLibrarySyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[ZhihuLibraryItem] = Field(default_factory=list, max_length=2000)
 
 class CardPayload(BaseModel):
     model_config = ConfigDict(extra="allow")

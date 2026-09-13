@@ -50,3 +50,5 @@ class AgentState(BaseModel):
     learning_reports: list[DiscoverLearningReport] = Field(default_factory=list)
     final_response: str | None = None
     errors: list[str] = Field(default_factory=list)
+    # 仅在进程内传递，不进入序列化结果。发现同源的每个昂贵阶段都会调用它。
+    cancel_check: object | None = Field(default=None, exclude=True)

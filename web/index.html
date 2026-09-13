@@ -30,16 +30,10 @@
     <section class="knowledge-launcher knowledge-shell" id="knowledgeLauncher">
       <div class="launcher-heading"><h2 id="launcherTitle">导入内容或概念，寻找跨学科同源</h2></div>
       <div class="import-options launcher-options">
-        <!-- 2026-09-13：「从链接导入」（原 01，文案「支持知乎、小红书、抖音等链接」）已删除。
-             它 POST 的 /api/extract_link 后端从来没注册过 —— 必然是 404，必然弹
-             「该链接被平台限制，解析失败」。而且就算补上这个接口也读不到：知乎对服务端
-             匿名请求直接 403，小红书/抖音是 JS 渲染的空壳。这三家要爬得到得靠「无头浏览器
-             + 自己的登录态池 + 代理池 + 长期维护签名」，跟部署在哪无关，本项目的约束
-             （云托管单实例、镜像只 pip install requirements）一条都不满足。
-             同目录 docs/产品说明.md 里也早写着「后端的链接解析服务尚未实现」。
-             用户的真实需求「分析这篇文章」由「从截图导入」完整覆盖，且那条路是真的通的。 -->
-        <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>01</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
-        <button class="import-option launcher-option" type="button" data-launch-import="image"><span>02</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+        <!-- 知乎内容通过官方开放平台搜索获取摘要与溯源链接，不抓取网页正文。 -->
+        <button class="import-option launcher-option" type="button" data-launch-import="zhihu"><span>01</span><strong>知乎搜索</strong><small>搜索真实讨论，选择摘要发现同源</small><b>⌕</b></button>
+        <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+        <button class="import-option launcher-option" type="button" data-launch-import="image"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
       </div>
     </section>
     <section class="history-memory knowledge-shell" id="historyMemory"><button class="history-back-button" id="historyBackButton" type="button" aria-label="返回导入方式">‹</button><div class="history-memory-head"><h2>历史记忆</h2><button id="historyMemoryMore" type="button">查看更多 →</button></div><div id="historyMemoryList"></div><button class="secondary history-clear-current" id="clearCurrentHistory" type="button">清空当前模式的历史</button></section>
@@ -117,7 +111,7 @@
       <div class="result-area" id="discoverResult" hidden aria-live="polite">
         <button class="back-button result-back" id="discoverBackToLauncher" type="button" aria-label="返回导入方式">‹</button>
         <p class="eyebrow" id="discoverTitle">发现同源</p>
-        <div class="principle"><strong>底层逻辑相似 ≠ 科学等价</strong><span>类比用于辅助理解，不替代各学科中的严格定义。</span></div>
+        <div class="principle"><strong>底层逻辑相似 ≠ 科学等价</strong><span>优先展示“有限成立”，同一结论内按逻辑同源度排序。检索相关性只表示内容被召回的程度；逻辑同源度表示底层结构有多相似。</span></div>
         <p class="answer" id="discoverReport"></p>
         <div class="candidate-list" id="candidateList"></div>
         <p class="empty-state" id="discoverEmpty" hidden>当前证据不足，不强行建立类比。</p>
@@ -170,13 +164,14 @@
       <article class="level-card"><div><small id="levelLabel">LV.1 · 学术萌新</small><strong><span id="profilePoints">0</span> <em>能量</em></strong></div><button id="openRulesButton" type="button">规则与明细 →</button><div class="level-track"><i id="levelProgress"></i></div><p id="levelRemaining">距离下一级还差 100 能量</p><div class="kanshan-static" aria-label="刘看山静态形象">◉</div></article>
       <div class="record-heading"><h3>我的记录</h3></div>
       <div class="record-grid"><button type="button" data-record-filter="mastered"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><strong id="recordMastered">0</strong><span>已掌握卡片</span><small>已熟练掌握</small></button><button type="button" data-record-filter="unmastered"><div class="record-icon-box" style="background:#FDF4F0;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D98A76" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><strong id="recordUnmastered">0</strong><span>未掌握卡片</span><small>待复习巩固</small></button><article id="recordNoteReview"><div class="record-icon-box" style="background:#F0F6F4;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B9E8F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div><span>笔记复盘</span><small>回看复盘对话</small></article><button type="button" data-record-schedule><div class="record-icon-box" style="background:#F6F2F8;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9887A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div><span>学习日志</span><small>查看复习计划</small></button></div>
-      <article class="kanshan-guide-card"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></div><div><strong>刘看山陪你一起学习</strong><p>刘看山正在后台帮你整理知识库，持续积累每一次深度思考。</p></div></article>
+      <article class="kanshan-guide-card zhihu-library-card" id="zhihuLibraryCard" role="button" tabindex="0"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></div><div><strong>知乎知识库</strong><p>连接你自己的知乎账号，自动整理收藏和点赞内容。</p><small>仅同步你授权的数据，其他人看不到。</small></div><span class="kanshan-card-arrow">›</span></article>
     </section>
   </main>
 
   <div class="local-loading" id="loading" hidden aria-live="polite" aria-label="正在处理">
     <div class="spinner"></div>
     <div class="loading-copy"><span id="loadingText">正在分析…</span><span class="loading-timer" id="loadingTimer"></span></div>
+    <button class="loading-cancel" id="cancelLoading" type="button" hidden>取消分析</button>
   </div>
   <button class="back-to-top" id="backToTop" type="button" aria-label="回到顶部">↑</button>
   <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
@@ -194,7 +189,7 @@
     <p class="input-hint">卡片会存进所选书架，并加入复习计划。</p>
     <p class="save-card-status" id="saveCardStatus" role="status"></p><div class="sheet-actions"><button class="primary" id="confirmSaveCard" type="button">确认存入卡片</button><button class="secondary" id="cancelSaveCard" type="button">取消</button></div>
   </section>
-  <section class="bottom-sheet history-sheet" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="historyTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyTitle">历史记录</h2><button id="historyClose" type="button">×</button></div><div class="history-filter-tabs" role="tablist" aria-label="历史记录类型"><button class="history-filter active" type="button" data-history-type="跨学科理解" role="tab">跨学科理解</button><button class="history-filter" type="button" data-history-type="读懂它" role="tab">读懂它</button></div><div id="historyList"></div><button class="secondary" id="clearHistory" type="button">清空当前模式历史</button></section>
+  <section class="bottom-sheet history-sheet" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="historyTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyTitle">历史记录</h2><button id="historyClose" type="button">×</button></div><div class="history-filter-tabs" role="tablist" aria-label="历史记录类型"><button class="history-filter active" type="button" data-history-type="跨学科理解" role="tab">跨学科理解</button><button class="history-filter" type="button" data-history-type="读懂它" role="tab">读懂它</button><button class="history-filter" type="button" data-history-type="知乎研究" role="tab">知乎研究</button></div><div id="historyList"></div><button class="secondary" id="clearHistory" type="button">清空当前模式历史</button></section>
   <section class="bottom-sheet delete-confirm global-confirm" id="historyDeleteConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="historyDeleteTitle"><div class="sheet-handle"></div><div class="sheet-heading"><h2 id="historyDeleteTitle">删除历史记录</h2><button id="closeHistoryDelete" type="button">×</button></div><p>删除后无法恢复，确定要删除这条历史记录吗？</p><div class="sheet-actions"><button class="secondary" id="cancelHistoryDelete" type="button">取消</button><button class="danger-button" id="confirmHistoryDelete" type="button">确认删除</button></div></section>
   <section class="bottom-sheet" id="noteSheet" hidden role="dialog" aria-modal="true" aria-labelledby="noteSheetTitle">
     <div class="sheet-handle"></div>
@@ -254,7 +249,13 @@
          产品定为「打开就能用、不要登录」，全去掉了 —— 设置里只剩资料和说明，
          界面上不再出现任何账号/登录字样。后端那套账号接口原样保留（见 api/auth_store.py），
          只是前端不再暴露入口。 -->
-    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button></div>
+    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="connectZhihuButton" type="button">连接知乎并整理收藏/点赞 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button></div>
+  </section>
+  <section class="bottom-sheet zhihu-consent-sheet" id="zhihuConsentSheet" hidden role="dialog" aria-modal="true" aria-labelledby="zhihuConsentTitle">
+    <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="zhihuConsentTitle">连接知乎知识库</h2><button id="zhihuConsentClose" type="button" aria-label="关闭">×</button></div>
+    <p>连接后，知源会使用你自己的知乎授权，整理你的收藏和点赞内容。</p>
+    <p class="muted-copy">每个人都需要在知乎页面登录并单独授权；你的收藏不会与别人共享。你可以随时取消授权或断开连接。</p>
+    <div class="sheet-actions"><button class="secondary" id="zhihuConsentCancel" type="button">暂不连接</button><button class="primary" id="zhihuConsentConfirm" type="button">连接我的知乎</button></div>
   </section>
   <section class="bottom-sheet about-sheet" id="aboutSheet" hidden role="dialog" aria-modal="true" aria-labelledby="aboutSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="aboutSheetTitle">关于知源</h2><button id="aboutSheetClose" type="button" aria-label="关闭关于知源">×</button></div>
@@ -289,11 +290,26 @@
     <div class="sheet-handle"></div>
     <div class="sheet-heading"><div><p class="eyebrow">导入到求知</p><h2 id="importSheetTitle">选择导入方式</h2></div><button id="importSheetClose" type="button" aria-label="关闭导入弹窗">×</button></div>
     <div class="import-options" id="importOptions">
-      <button class="import-option" type="button" data-import-panel="manualImportPanel"><span>01</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
-      <button class="import-option" type="button" data-import-panel="imageImportPanel"><span>02</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+      <button class="import-option" type="button" data-import-panel="zhihuSearchPanel"><span>01</span><strong>知乎搜索</strong><small>搜索真实讨论，选择摘要发现同源</small><b>⌕</b></button>
+      <button class="import-option" type="button" data-import-panel="manualImportPanel"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+      <button class="import-option" type="button" data-import-panel="imageImportPanel"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
     </div>
-    <!-- 这里原来是 #linkImportPanel（粘贴链接/分享文案 → 解析链接），随「从链接导入」一起去掉了，
-         原因见上面 launcher 那段的注释。 -->
+    <div class="import-panel" id="zhihuSearchPanel" hidden>
+      <button class="import-back" type="button">← 选择其他方式</button><h3>搜索知乎内容</h3>
+      <div class="zhihu-mode-tabs" role="tablist" aria-label="知乎使用方式">
+        <button class="active" type="button" data-zhihu-mode="quick" role="tab" aria-selected="true">快速搜索</button>
+        <button type="button" data-zhihu-mode="research" role="tab" aria-selected="false">研究模式</button>
+      </div>
+      <div class="zhihu-search-row"><input id="zhihuSearchQuery" type="search" placeholder="输入主题或问题"><button class="primary" id="confirmZhihuSearch" type="button">搜索</button></div>
+      <p class="import-feedback" id="zhihuSearchFeedback">例如：负反馈为什么能让系统稳定？结果来自知乎开放平台。</p>
+      <p class="zhihu-setup-help" id="zhihuSetupHelp" hidden>站点管理员需要先配置知乎开放平台信息；普通用户无需填写密钥，只需在授权页面登录自己的知乎账号。</p>
+      <div class="zhihu-search-results" id="zhihuSearchResults"></div>
+      <div class="zhihu-research-toolbar" id="zhihuResearchToolbar" hidden>
+        <span id="zhihuSelectionCount">已选 0 条（最多 6 条）</span>
+        <button class="secondary compact" id="toggleZhihuSelectAll" type="button">全选</button>
+        <button class="primary" id="useZhihuResearch" type="button" disabled>整合为学习笔记</button>
+      </div>
+    </div>
     <div class="import-panel" id="manualImportPanel" hidden>
       <button class="import-back" type="button">← 选择其他方式</button><h3>手动创建内容</h3>
       <textarea id="manualImportText" rows="7" placeholder="输入或粘贴需要解读的文字……"></textarea>
@@ -339,4 +355,3 @@
   <script src="/static/app.js" defer></script>
 </body>
 </html>
-

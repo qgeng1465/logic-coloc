@@ -188,7 +188,7 @@ class LogicColocService:
             attachment_notes=list(attachment.notes) if attachment else [],
         )
 
-    def discover(self, request: DiscoverRequest, *, user_id: str = "") -> DiscoverResponse:
+    def discover(self, request: DiscoverRequest, *, user_id: str = "", cancel_check=None) -> DiscoverResponse:
         session_id = request.session_id
         if session_id is None:
             session_id = self._create_session(request.text, user_id=user_id)
@@ -200,6 +200,7 @@ class LogicColocService:
                 "user_input": request.text,
                 "intent": Intent.DISCOVER_HOMOLOGY,
                 "top_k": min(request.top_k, 5),
+                "cancel_check": cancel_check,
             }
         )
         self._check_agent_result(result)
