@@ -30,23 +30,19 @@ const rawFetch = window.fetch.bind(window);
 const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || "";
 const setToken = (token) => { if (token) localStorage.setItem(AUTH_TOKEN_KEY, token); else localStorage.removeItem(AUTH_TOKEN_KEY); };
 
-/* ---- 匿名（游客）身份 ----
-   目标：打开网站就能用，不弹登录页。首次访问时静默向 /api/auth/guest 要一个匿名
-   身份 —— 服务端签发的是和正式账号一模一样的无状态 token，数据也照常按 uid 隔离，
-   所以「我的知识」「卡片」「能量」对游客一样能用。登录页退化成兜底：只在拿不到
-   匿名身份（断网 / 服务端挂了）时才出现。
+/* ---- 匿名身份 ----
+   打开网站就能用，不需要登录。首次访问静默向 /api/auth/guest 要一个匿名身份 ——
+   服务端签发的是和正式账号一模一样的无状态 token，数据照常按 uid 隔离，所以
+   「我的知识」「卡片」「能量」一样能用。
 
-   GUEST_KEY **故意不带 uid 命名空间**：token 失效时我们已经解不出 uid 了，
-   得靠它判断「上一个身份是不是游客」，才能再建一个 —— 否则游客会卡在一个
-   没有密码可输的登录页上（他本来就没有密码）。 */
-const GUEST_KEY = "logic_coloc_guest_v1";
-// 一次性重试标记：防止「建了游客 → /api/auth/me 仍然 401 → 再建」这种无限刷新。
+   产品上**没有任何登录入口**（2026-09-13 起）：设置里的绑定/登录/退出三个按钮和
+   兜底层那张登录注册表单都去掉了。后端那套注册/登录/绑定接口没删，只是前端不再
+   暴露 —— 删后端只会连累测试和文档，对用户看到的东西毫无影响。
+
+   GUEST_RETRY_KEY 是**一次性**重试标记：防止「建了身份 → /api/auth/me 仍然 401 →
+   再建」这种无限刷新。token 失效时我们既解不出 uid、也没有密码可问用户要（产品上
+   根本没有登录），所以唯一的出路就是再建一个。 */
 const GUEST_RETRY_KEY = "logic_coloc_guest_retry_v1";
-// 「刚刚主动退出登录」的标记。没有它的话，退出登录会立刻把用户变成一个**新的**游客，
-// 看上去就像「退出了但没退干净、数据还全空了」。放在 sessionStorage：关掉标签页自然失效。
-const LOGGED_OUT_KEY = "logic_coloc_logged_out_v1";
-const isGuestSession = () => localStorage.getItem(GUEST_KEY) === "1";
-const setGuestSession = (on) => { if (on) localStorage.setItem(GUEST_KEY, "1"); else localStorage.removeItem(GUEST_KEY); };
 
 async function createGuestSession() {
   try {
@@ -55,7 +51,6 @@ async function createGuestSession() {
     const data = await response.json().catch(() => ({}));
     if (!data.token) return false;
     setToken(data.token);
-    setGuestSession(true);
     return true;
   } catch {
     return false;
@@ -67,8 +62,9 @@ async function authFetch(url, options = {}) {
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await rawFetch(url, { ...options, headers });
-  // 401 = 没带 token / 签名不对 / 已过期 / 账号已不存在。四种情况前端处理完全一样：
-  // 清掉本地 token 回登录页。后端也刻意只回同一句话，不细分是哪种。
+  // 401 = 没带 token / 签名不对 / 已过期 / 身份已不存在。四种情况前端处理完全一样：
+  // 清掉本地 token，弹兜底层让用户刷新（刷新即重新建一个匿名身份）。后端也刻意只回
+  // 同一句话，不细分是哪种。
   if (response.status === 401 && !options.skipAuthRedirect) handleUnauthorized();
   return response;
 }
@@ -79,12 +75,14 @@ function handleUnauthorized() {
   if (unauthorizedHandled) return;
   unauthorizedHandled = true;
   setToken("");
-  showAuthPage("登录已过期，请重新登录。");
+  showAuthPage("连接已中断，请刷新页面重试。");
 }
 
 /* ---- 本地存储按账号分命名空间 ----
-   同一台浏览器上换个账号登录，不该看到上一个人的书架/草稿。所有 key 后面拼
-   `::<uid>`；未登录时为空串（= 旧的全局 key，只用于登录前那一小段时间）。 */
+   换个身份就不该看到上一个人的书架/草稿。所有 key 后面拼 `::<uid>`；还没有身份时
+   为空串（= 旧的全局 key，只用于拿到身份前那一小段时间）。
+   2026-09-13 起产品上只有匿名身份，没有「换个人登录」这回事了 —— 但同一台浏览器
+   里 token 失效后会重建一个**新 uid**，命名空间仍然照常起作用，所以这层没动。 */
 const buildStorageKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
   return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
@@ -102,43 +100,24 @@ function applyStorageScope(uid) {
   discoverDraftText = localStorage.getItem(draftStorageKeys.discoverPanel) || "";
 }
 
-// 登录时从 /api/auth/me 灌进来，之后是资料的服务端权威副本（本地只做乐观显示）。
+// /api/auth/me 返回后灌进来，之后是资料的服务端权威副本（本地只做乐观显示）。
 let authProfile = null;
 let currentUser = null;
 
 const DEFAULT_USER = { nickname: "学术萌新", signature: "记录每一次深度思考，留给未来的自己。", avatarUrl: "" };
 
-// 登录页有两种身份：拿不到匿名身份时的**兜底闸门**（不可关：关了也无事可做，所有接口
-// 都是 401），以及从设置里主动进来的**可选弹层**（必须能关）。这个标记区分两者。
-let authDismissible = false;
-
+/* 兜底提示层：只在**拿不到匿名身份**（断网 / 服务端没起来 / 身份失效）时盖住整页，
+   给一句说明和一个「刷新重试」。正常打开网站它永远不出现。
+   2026-09-13 之前这里是一张登录/注册表单，现在整层里一个字都不提登录。 */
 function showAuthPage(message = "") {
-  authDismissible = false;
-  $("authSkipButton").hidden = true;
   $("authPage").hidden = false;
-  $("authError").textContent = message;
-  $("authError").hidden = !message;
+  $("authNotice").textContent = message || "服务暂时不可用，请刷新页面重试。";
   document.body.classList.add("auth-open");
-  const input = $("authUsername");
-  if (input.focus) input.focus();
 }
 
 function hideAuthPage() {
-  authDismissible = false;
   $("authPage").hidden = true;
   document.body.classList.remove("auth-open");
-}
-
-/** 从设置里主动打开登录页 / 绑定页 —— 可关闭的那种。 */
-function openAuthOverlay(mode) {
-  authDismissible = true;
-  setAuthMode(mode);
-  $("authUsername").value = "";
-  $("authPassword").value = "";
-  $("authPage").hidden = false;
-  document.body.classList.add("auth-open");
-  const input = $("authUsername");
-  if (input.focus) input.focus();
 }
 
 async function checkBackendHealth() {
@@ -1821,8 +1800,10 @@ new MutationObserver(syncHistoryBack).observe($("discoverResult"), { attributes:
 new MutationObserver(syncHistoryBack).observe($("explainResult"), { attributes: true, attributeFilter: ["hidden"] });
 
 /* ================================ 启动 ================================
-   顺序是「先确认登录态，再加载数据」。未登录时一张卡片都不拉：页面被 #authPage
-   整个盖住，拉了也看不见，只会往控制台刷一串 401。 */
+   顺序是「先拿到身份，再加载数据」。身份拿不到时一张卡片都不拉：页面被 #authPage
+   整个盖住，拉了也看不见，只会往控制台刷一串 401。
+   注意 bootApp() 现在只有 initAuth() 一个调用点 —— 必须等身份就位再跑，否则
+   那些请求全是匿名 401。 */
 async function bootApp() {
   renderBooks();
   renderCategories();
@@ -1844,55 +1825,38 @@ async function bootApp() {
 }
 
 async function initAuth() {
-  // 主动点过「退出登录」的：停在登录页，**不要**顺手把人家变成一个匿名身份
-  // （那看起来像「退出了却没退干净、数据还全空了」）。刷新页面即可重新拿到匿名身份。
-  if (!getToken() && sessionStorage.getItem(LOGGED_OUT_KEY) === "1") {
-    sessionStorage.removeItem(LOGGED_OUT_KEY);
-    setAuthMode("login");
-    showAuthPage();
-    return;
-  }
   // 没有 token = 第一次来（或清过浏览器数据）：静默建一个匿名身份，不打扰用户。
-  // 建不出来才回退到登录页 —— 那种情况多半是断网或服务端没起来。
+  // 建不出来才回退到兜底提示层 —— 那种情况多半是断网或服务端没起来。
   if (!getToken() && !(await createGuestSession())) {
-    showAuthPage("无法连接服务器，请检查网络后重试。");
+    showAuthPage("无法连接服务器，请刷新页面重试。");
     return;
   }
   let data;
   try {
     // skipAuthRedirect：这里的 401 是「token 失效」的正常分支，自己处理即可，
-    // 交给 authFetch 会再多跳一次、并且把文案覆盖成「登录已过期」。
+    // 交给 authFetch 会再多跳一次、并且把文案覆盖掉。
     const response = await authFetch(apiUrl("/api/auth/me"), { cache: "no-store", skipAuthRedirect: true });
     if (!response.ok) {
-      // token 失效（过期 / 换了 LC_SECRET_KEY / 账号被清理）。正式账号有凭证可输，
-      // 回登录页；游客没有任何凭证，再建一个匿名身份才是唯一走得通的路。
+      // token 失效（过期 / 换了 LC_SECRET_KEY / 匿名记录被清理）。产品上根本没有登录，
+      // 没有任何凭证可问用户要，所以唯一走得通的路是**再建一个匿名身份**。
       // 只重试一次，避免服务端异常时无限刷新。
       setToken("");
-      if (isGuestSession() && sessionStorage.getItem(GUEST_RETRY_KEY) !== "1") {
+      if (sessionStorage.getItem(GUEST_RETRY_KEY) !== "1") {
         sessionStorage.setItem(GUEST_RETRY_KEY, "1");
         if (await createGuestSession()) { window.location.reload(); return; }
       }
-      setGuestSession(false);
-      showAuthPage();
+      showAuthPage("身份已失效，请刷新页面重试。");
       return;
     }
     data = await response.json();
   } catch {
-    showAuthPage("无法连接服务器，请检查网络后重试。");
+    showAuthPage("无法连接服务器，请刷新页面重试。");
     return;
   }
   sessionStorage.removeItem(GUEST_RETRY_KEY);
   currentUser = data.user || null;
   authProfile = data.profile || null;
   applyStorageScope(currentUser?.id || "");
-  // 服务端的 user.guest 是权威判定（缺省即非匿名，见 auth_store.public_user）。
-  const guest = !!currentUser?.guest;
-  setGuestSession(guest);
-  $("settingsUsername").textContent = guest ? "游客（尚未绑定账号）" : (currentUser?.username || "—");
-  $("bindAccountButton").hidden = !guest;
-  $("logoutButton").hidden = guest;
-  // 正式账号时这个入口的含义是「换一个账号登」，游客时是「登进我已有的账号」。
-  $("switchAccountLabel").textContent = guest ? "登录已有账号" : "切换账号";
   // 顺序要紧，三步不能换：① 认领账号体系之前留在无命名空间 key 里的书架；
   // ② 再擦掉老版本种进 localStorage 的种子数据；③ 最后才进 bootApp()（里面会拉/推
   // 书架）。反过来的话种子会被推到服务端，那就不再是"清一下浏览器缓存"能解决的了。
@@ -1902,100 +1866,10 @@ async function initAuth() {
   bootApp();
 }
 
-/* ---- 登录 / 注册 / 绑定表单 ----
-   三种模式共用同一张表单。`bind` 是给匿名身份用的：把用户名密码补到当前这个 uid 上
-   （POST /api/auth/upgrade），所以它必须带 token、必须走 authFetch，也不能有那对
-   「登录 / 注册」标签页 —— 它是从设置里进来的一个可关闭的弹层，不是一道门。 */
-let authMode = "login";
-const authSubmitLabel = () => (authMode === "bind" ? "保存并绑定" : authMode === "register" ? "注册并开始" : "登录");
-
-function setAuthMode(mode) {
-  authMode = mode === "register" ? "register" : mode === "bind" ? "bind" : "login";
-  const registering = authMode === "register";
-  const binding = authMode === "bind";
-  $("authTabs").hidden = binding;
-  $("authLoginTab").classList.toggle("active", authMode === "login");
-  $("authRegisterTab").classList.toggle("active", registering);
-  $("authLoginTab").setAttribute("aria-selected", String(authMode === "login"));
-  $("authRegisterTab").setAttribute("aria-selected", String(registering));
-  $("authSubmit").textContent = authSubmitLabel();
-  $("authSkipButton").hidden = !authDismissible;
-  $("authHint").textContent = binding
-    ? "不绑定也能继续用，只是换台设备或清掉浏览器数据就找不回来了。"
-    : registering ? "数据只属于这个账号，换设备登录同一个账号就能看到。" : "还没有账号？点上面的「注册」建一个。";
-  $("authPassword").setAttribute("autocomplete", registering || binding ? "new-password" : "current-password");
-  $("authError").hidden = true;
-}
-
-async function submitAuth() {
-  const username = $("authUsername").value.trim();
-  const password = $("authPassword").value;
-  const button = $("authSubmit");
-  const binding = authMode === "bind";
-  if (!username || !password) { $("authError").textContent = "请填写用户名和密码。"; $("authError").hidden = false; return; }
-  button.disabled = true;
-  button.textContent = binding ? "正在绑定…" : authMode === "register" ? "正在注册…" : "正在登录…";
-  try {
-    // 绑定走 authFetch（要带上当前匿名身份的 token 去认领）；登录/注册走 rawFetch ——
-    // 那两个分支本来就没有 token，走 authFetch 只会在失败时多触发一次「踢回登录页」，
-    // 而人已经在登录页上了。
-    const response = binding
-      ? await authFetch(apiUrl("/api/auth/upgrade"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      })
-      : await rawFetch(apiUrl(`/api/auth/${authMode}`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      // 后端的 detail 已经是给人看的中文（重名 / 密码不对 / 格式不合规），照原样显示。
-      $("authError").textContent = typeof data.detail === "string" ? data.detail : "操作失败，请稍后重试。";
-      $("authError").hidden = false;
-      return;
-    }
-    setToken(data.token);
-    setGuestSession(false);
-    // 这个文件里的全局态太多（书架、草稿、已渲染的 DOM），重载是最省事也最不会漏的重置。
-    window.location.reload();
-  } catch {
-    $("authError").textContent = "无法连接服务器，请检查网络后重试。";
-    $("authError").hidden = false;
-  } finally {
-    button.disabled = false;
-    // 这里**只能**恢复按钮文案，不能图省事调 setAuthMode(authMode)：那个函数会顺手把
-    // 错误位清空，而失败分支刚刚才把错误填进去 —— 于是信息一闪而过、用户看不到原因。
-    button.textContent = authSubmitLabel();
-  }
-}
-
-function logout() {
-  // 游客没有可输的凭证，退出 = 永久丢掉这份数据（服务端只剩一个再也验不过的孤立 uid）。
-  // 所以这里必须先问一句；按钮平时是隐藏的，但键盘 / 误触也可能触达。
-  if (isGuestSession() && !window.confirm("你现在是匿名身份，退出会连同这份数据一起丢掉，且找不回来。确定继续吗？")) return;
-  // token 是服务端签的无状态串，没有可吊销的表 —— 退出就是删掉本地这一份。
-  setToken("");
-  setGuestSession(false);
-  currentUser = null;
-  authProfile = null;
-  // 告诉 initAuth「这是主动退出，别给我建新游客」，让它停在登录页。
-  sessionStorage.setItem(LOGGED_OUT_KEY, "1");
-  closeSettingsSheet();
-  window.location.reload();
-}
-
-$("authLoginTab").addEventListener("click", () => setAuthMode("login"));
-$("authRegisterTab").addEventListener("click", () => setAuthMode("register"));
-$("authForm").addEventListener("submit", (event) => { event.preventDefault(); submitAuth(); });
-$("logoutButton").addEventListener("click", logout);
-// 这两个都是**可选的**入口，不是门：一个把当前匿名身份升级成正式账号（换设备能继续用），
-// 一个是登进已有的账号（换设备 / 退出登录之后回来）。它们必须能关掉。
-$("bindAccountButton").addEventListener("click", () => { closeSettingsSheet(); openAuthOverlay("bind"); });
-$("switchAccountButton").addEventListener("click", () => { closeSettingsSheet(); openAuthOverlay("login"); });
-$("authSkipButton").addEventListener("click", () => { setAuthMode("login"); hideAuthPage(); });
+// 兜底提示层上的「刷新重试」。刷新即重新走一遍 initAuth —— 会再建一个匿名身份并进应用，
+// 所以这一层永远是个出口，不是死路。用整页 reload 而不是重跑 initAuth()，是因为这个文件里
+// 的全局态太多（书架、草稿、已渲染的 DOM），重载最省事也最不会漏。
+$("authRetryButton").addEventListener("click", () => window.location.reload());
 
 $("explainButton").addEventListener("click", explain);
 $("chatButton").addEventListener("click", chat);

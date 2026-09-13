@@ -55,10 +55,13 @@ Windows 控制台默认 GBK，中文/emoji 输出会乱码，跑 Python 前置 `
 
 ```
 web/         单页前端。index.html 用绝对路径 /static/* 引资源
-  └─ app.js  无框架，约 1400 行。两个「功能面板」(explainPanel / discoverPanel) +
+  └─ app.js  无框架，约 1900 行。两个「功能面板」(explainPanel / discoverPanel) +
              五个「应用页」(cardsPage / notesPage / reviewPage / petPage …) 两套切换机制。
-             所有请求走 authFetch()（补 Authorization 头 + 401 统一处理：正式账号踢回
-             登录页，游客则自动重建一个匿名身份，见 api/auth_store.py 的模块说明）
+             所有请求走 authFetch()（补 Authorization 头 + 401 统一处理：清掉本地 token
+             并盖上 #authPage 兜底层，让用户刷新 —— 刷新即重建一个匿名身份）。
+             ⚠️ **前端没有任何账号 UI**（2026-09-13 起）：设置里只剩「账户与资料 / 关于知源」
+             两项，#authPage 退化成一个纯提示覆盖层（一句说明 + 「刷新重试」），只有拿不到
+             匿名身份时才出现。不要"顺手"把登录/注册表单加回来。
 api/         HTTP 层
   ├─ __init__.py  app 装配：CORS 白名单写死 localhost:5500/8080；挂 /static → web/、/uploads
   ├─ routes.py    所有路由        ├─ service.py   LogicColocService：唯一持有 graph/corpus/retriever
@@ -91,11 +94,11 @@ sessions/manager.py  纯内存会话（dict），有上限地暴露 recent_messa
 |---|---|---|
 | GET | `/` | 返回 `web/index.html`（**匿名**） |
 | GET | `/api/health` | 对 `config.BRIDGE` 做 1.5s TCP 探测；不通返回 `code:503`（**匿名**，平台探活用） |
-| POST | `/api/auth/guest` | **匿名**。建一个免注册的匿名身份 → `{token, user}`，user 带 `guest: true`。前端首访静默调它，所以登录页不再是必经之路；超 `LC_MAX_GUESTS` 时淘汰最早的匿名记录 |
-| POST | `/api/auth/upgrade` | 给匿名身份补用户名密码 → `{token, user}`。**uid 不变**，数据不丢。已经是正式账号 400、重名 409、格式不合规 422 |
-| POST | `/api/auth/register` | → `{token, user}`；重名 409、格式不合规 422 |
-| POST | `/api/auth/login` | → `{token, user}`；用户名或密码错都是 401 |
-| GET | `/api/auth/me` | 校验 token + 回 `{user, profile}`，前端启动时用它决定进不进应用 |
+| POST | `/api/auth/guest` | **匿名**。建一个免注册的匿名身份 → `{token, user}`，user 带 `guest: true`。前端首访静默调它 —— **这是所有人拿到身份的唯一途径**，产品上不存在别的入口；超 `LC_MAX_GUESTS` 时淘汰最早的匿名记录 |
+| POST | `/api/auth/upgrade` | 给匿名身份补用户名密码 → `{token, user}`。**uid 不变**，数据不丢。已经是正式账号 400、重名 409、格式不合规 422。**前端已无入口**，接口留着备用 |
+| POST | `/api/auth/register` | → `{token, user}`；重名 409、格式不合规 422。**前端已无入口** |
+| POST | `/api/auth/login` | → `{token, user}`；用户名或密码错都是 401。**前端已无入口** |
+| GET | `/api/auth/me` | 校验 token + 回 `{user, profile}`，前端启动时用它确认身份还在，再放行 bootApp() |
 | GET/POST | `/api/user/profile` | 读/写昵称、签名、头像 URL |
 | POST | `/api/user/avatar` | 头像落盘到 `uploads/<uid>/` 并写进资料 |
 | POST | `/api/user/points` | `{delta, reason}` → 服务端累加并返回权威值 |
@@ -114,7 +117,14 @@ sessions/manager.py  纯内存会话（dict），有上限地暴露 recent_messa
 StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
 `from .user_paths import UPLOAD_DIR`），运行期改 `user_paths.UPLOAD_DIR` 不会影响它。
 
-### 账号体系的四个刻意决定（别"顺手改回去"）
+### 账号体系的刻意决定（别"顺手改回去"）
+
+> ⚠️ **产品上现在只有匿名身份**（2026-09-13 起，评委要求「点击即用」）。前端把登录/注册/
+> 绑定三个入口和整张表单**全部删掉了**，`#authPage` 只剩一句提示 + 「刷新重试」。
+> 下面这套后端原样保留 —— 245 个测试全部跑在它上面，删掉只会连累测试与文档，对用户
+> 看到的东西零影响。`/api/auth/{register,login,upgrade}` 三个接口现在是**没有前端的
+> 备用接口**，不是死代码，别删。
+
 
 1. **密码哈希只用标准库 PBKDF2-HMAC-SHA256**（`hashlib.pbkdf2_hmac`，每账号随机盐 +
    `hmac.compare_digest`）。`requirements.txt` 里**没有** passlib/bcrypt/argon2，而线上
@@ -122,8 +132,9 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
    import 它线上就崩。轮数写在每条用户记录里，将来调高不会让老账号登不上。
 
 2. **登录态是无状态 HMAC token**（`base64url(payload).base64url(HMAC-SHA256)`），不是内存
-   dict。内存 dict 一重启就把所有人踢回登录页，而云托管每次重新部署都会重启。**代价是
-   服务端无法吊销**：退出登录只能靠前端删掉本地那一份。要真吊销得再加一张黑名单表。
+   dict。内存 dict 一重启就让所有人身份失效，而云托管每次重新部署都会重启 —— 前端会
+   当场重建一个**新 uid 的匿名身份**，用户那边看到的是「书架空了」。**代价是服务端无法
+   吊销**：只能靠前端删掉本地那一份。要真吊销得再加一张黑名单表。
    密钥取 `config.SECRET_KEY`（环境变量 `LC_SECRET_KEY`），没配就自动生成一份存
    `data/.secret_key`。换成别人用不同密钥签的 token，`verify_token` 必然失败。
 
@@ -140,8 +151,9 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
    - 所有业务路由**一行都不用为游客特判**，`Depends(current_user)` 照常工作；
    - 登录接口永远匹配不到匿名记录（`_USERNAME_RE` 不许出现 `:`），且 `authenticate`
      里还有一道 `GUEST_FLAG` 显式拦截 —— 它没有密码，绝不能被比中；
-   - `bind_credentials()` 把用户名密码补到**同一个 uid** 上，这就是「保存我的知识 /
-     换台设备继续用」的全部实现：数据一个都不丢。
+   - `bind_credentials()` 把用户名密码补到**同一个 uid** 上，这是「保存我的知识 /
+     换台设备继续用」的全部实现：数据一个都不丢。**前端入口已删**，但这条路径本身
+     完好 —— 将来要加回「保存进度」只需接上 `/api/auth/upgrade`，不用动存储层。
 
    **`public_user` 里的 `guest` 键只在是匿名身份时出现**，别改成恒定输出、也别为它
    去改 `test_public_user_never_exposes_credentials` / `test_register_login_and_me`

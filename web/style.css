@@ -404,21 +404,22 @@ select { width: 100%; height: 44px; border: 1px solid var(--line-strong); border
    位置选择器会在「加了「退出登录」」这种改动里悄悄错位（原本 ⓘ 就跑到了退出上）。 */
 .settings-menu #accountSettingsButton::before { content: "♙"; margin-right: 12px; color: var(--brand-600); }
 .settings-menu #aboutKnowledgeButton::before { content: "ⓘ"; margin-right: 12px; color: var(--brand-600); }
-.settings-menu #logoutButton::before { content: "⇥"; margin-right: 12px; color: var(--brand-600); }
-/* 这两条是后补的。漏掉 ::before 的代价不只是「少个图标」：.sheet-menu-button 是
-   space-between 布局，图标、文字、› 各算一个 flex 项，少一项文字就被挤到最左边
-   （截图里「切换账号」左对齐、其他三行居中，就是这个原因）。新加菜单项时记得一起加。 */
-.settings-menu #bindAccountButton::before { content: "⊕"; margin-right: 12px; color: var(--brand-600); }
-.settings-menu #switchAccountButton::before { content: "⇄"; margin-right: 12px; color: var(--brand-600); }
-.settings-account { margin: 0 0 12px; padding: 0 5px; color: var(--muted); font-size: 12px; }
-.settings-account strong { color: var(--ink); font-size: 13px; }
+/* 上面 .settings-menu 那两项的 ♙ / ⓘ 图标**成对存在**，这是必须的：
+   .sheet-menu-button 是 space-between 布局，图标、文字、› 各算一个 flex 项，
+   一行有图标、相邻一行没有，那行的文字就会被挤到最左边。新加菜单项时成对加。 */
 .about-copy { margin: 4px 0 8px; color: var(--ink-soft); font-size: 15px; line-height: 1.8; }
 
-/* ============================== 登录 / 注册页 ==============================
+/* ============================== 兜底提示层 ==============================
    覆盖层（fixed + inset: 0），放在 .app-shell 外面，所以不受 shell 排版影响。
-   z-index 200：高于全屏页 40 与 toast 50 —— 未登录时它是唯一可见的一层。
-   输入框和按钮**刻意不重写**：全局的 input / label / .primary / .error 已经是
-   这一套语言，重写只会多出第二份需要同步维护的定义。
+   z-index 200：高于全屏页 40 与 toast 50 —— 拿不到身份时它是唯一可见的一层。
+
+   2026-09-13：这里原来是「登录 / 注册页」。产品定为「打开就能用、不要登录」之后，
+   表单没了，只剩一句说明 + 一个「刷新重试」，但它仍然是个完整的覆盖层，所以
+   .auth-page / .auth-card / .auth-brand 这些名字**保留没改** —— 改名要同时动
+   index.html、app.js 和这张表，收益只有「名字更贴切」，不值。
+
+   按钮**刻意不重写**：全局的 .primary 已经是这一套语言，重写只会多出第二份
+   需要同步维护的定义。
    这里不能用 backdrop-filter：背景是不透明的品牌色渐变，毛玻璃在它上面什么也
    透不出来，纯属白付一次合成开销。
    ========================================================================== */
@@ -447,18 +448,10 @@ select { width: 100%; height: 44px; border: 1px solid var(--line-strong); border
 .auth-brand img { width: 56px; height: 56px; border-radius: var(--r-lg); }
 .auth-brand h1 { margin: 10px 0 6px; color: var(--ink); font-size: 20px; }
 .auth-brand p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--brand-50); }
-.auth-tab { min-height: 38px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 14px; font-weight: 700; }
-.auth-tab.active { background: var(--surface); color: var(--brand-700); box-shadow: var(--sh-1); }
-.auth-form label { margin-top: 4px; color: var(--ink-soft); }
 .auth-submit { width: 100%; min-height: 46px; margin-top: 20px; font-size: 15px; }
 .auth-submit[disabled] { opacity: .55; }
-.auth-hint { margin: 16px 0 0; text-align: center; color: var(--muted); font-size: 12px; }
-/* 「以后再说」。只在绑定模式下渲染（别的模式 [hidden] 挡掉）——绑定是可选的，
-   必须留一个体面的出口，不能让人以为不填就进不去。 */
-.auth-skip { display: block; width: 100%; min-height: 40px; margin-top: 10px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; }
-/* 登录页盖住整个应用时锁住底层滚动：它下面的 .app-shell 虽然没渲染数据，
-   但静态内容仍在，不锁的话手机上能在登录页背后推动底下的页面。 */
+/* 兜底层盖住整个应用时锁住底层滚动：它下面的 .app-shell 内容仍在，
+   不锁的话手机上能在提示层背后推动底下的页面。 */
 body.auth-open { overflow: hidden; }
 
 .academic-details, .learning-details, .technical-details { border: 1px solid var(--line); border-radius: var(--r-md); padding: 0 12px; background: var(--brand-50); margin-top: 12px; }
@@ -1333,7 +1326,7 @@ body.auth-open { overflow: hidden; }
    已经内凹的容器里的（再凹一层就成了「井中井」）—— 所以紧接着把这两处的内阴影显式
    清掉。改这段时别把下面那两条清了。 */
 textarea, input, select, .rich-editor, .note-search, .review-filters, .mode-tabs,
-.auth-tabs, .history-filter-tabs, .attachment-picker, .image-picker, .track {
+.history-filter-tabs, .attachment-picker, .image-picker, .track {
   background: var(--nm-face);
   border-color: transparent;
   box-shadow: var(--nm-in-1);
@@ -1346,7 +1339,7 @@ textarea:focus, input:focus, .rich-editor:focus {
 /* 分段选择器：容器内凹，选中的那一格外凸（「按下的一格弹起来」）。
    ⚠️ .tab（跨学科理解 / 读懂它）**不在这里**：它选中时是蓝底白字（226 行），
    一改面就成了白字压白面、直接看不见。它走下面单独一条，只加光影不动填色。 */
-.review-filter.active, .auth-tab.active {
+.review-filter.active {
   background: var(--nm-face-strong);
   box-shadow: var(--nm-out-1);
 }

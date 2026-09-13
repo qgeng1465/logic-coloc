@@ -242,8 +242,12 @@
   </section>
   <section class="bottom-sheet settings-sheet" id="settingsSheet" hidden role="dialog" aria-modal="true" aria-labelledby="settingsSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="settingsSheetTitle">设置</h2><button id="settingsSheetClose" type="button" aria-label="关闭设置">×</button></div>
-    <p class="settings-account">当前账号：<strong id="settingsUsername">—</strong></p>
-    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button><button class="sheet-menu-button" id="bindAccountButton" type="button" hidden>保存我的知识（绑定账号） <span>›</span></button><button class="sheet-menu-button" id="switchAccountButton" type="button"><span id="switchAccountLabel">登录已有账号</span> <span>›</span></button><button class="sheet-menu-button" id="logoutButton" type="button">退出登录 <span>›</span></button></div>
+    <!-- 2026-09-13：这里原来还有「当前账号：游客（尚未绑定账号）」一行，以及
+         「保存我的知识（绑定账号）」「登录已有账号」「退出登录」三个按钮。
+         产品定为「打开就能用、不要登录」，全去掉了 —— 设置里只剩资料和说明，
+         界面上不再出现任何账号/登录字样。后端那套账号接口原样保留（见 api/auth_store.py），
+         只是前端不再暴露入口。 -->
+    <div class="settings-menu"><button class="sheet-menu-button" id="accountSettingsButton" type="button">账户与资料 <span>›</span></button><button class="sheet-menu-button" id="aboutKnowledgeButton" type="button">关于知源 <span>›</span></button></div>
   </section>
   <section class="bottom-sheet about-sheet" id="aboutSheet" hidden role="dialog" aria-modal="true" aria-labelledby="aboutSheetTitle">
     <div class="sheet-handle"></div><div class="sheet-heading"><h2 id="aboutSheetTitle">关于知源</h2><button id="aboutSheetClose" type="button" aria-label="关闭关于知源">×</button></div>
@@ -311,34 +315,22 @@
   </nav>
   </div>
 
-  <!-- 登录 / 注册。**故意放在 .app-shell 外面**：它是覆盖层而不是应用内容，
+  <!-- 兜底提示层。**故意放在 .app-shell 外面**：它是覆盖层而不是应用内容，
        放在 shell 内会继承 shell 的排版；放在外面才能干净地盖住整页。
-       z-index 200 高于全屏页（40）与 toast（50），未登录时它就是唯一可见的一层。 -->
+       z-index 200 高于全屏页（40）与 toast（50），拿不到身份时它就是唯一可见的一层。
+
+       2026-09-13：这里原来是一张「登录 / 注册」表单。产品定为「打开就能用、不要登录」
+       之后，表单连同「登录 / 注册」两个标签页一起去掉了 —— 这一层退化成纯提示，
+       只在**断网或服务端没起来、连匿名身份都拿不到**时才出现（见 app.js 的 initAuth）。
+       正常打开网站它永远不出现。 -->
   <section class="auth-page" id="authPage" hidden aria-labelledby="authTitle">
     <div class="auth-card">
       <div class="auth-brand">
         <img src="/static/assets/images/logo.webp" alt="">
         <h1 id="authTitle">知源 isoLogic</h1>
-        <p>登录后，笔记、卡片、复习记录和能量都跟着你的账号走。</p>
+        <p id="authNotice">正在连接服务…</p>
       </div>
-
-      <div class="auth-tabs" id="authTabs" role="tablist" aria-label="登录或注册">
-        <button class="auth-tab active" id="authLoginTab" type="button" role="tab" aria-selected="true">登录</button>
-        <button class="auth-tab" id="authRegisterTab" type="button" role="tab" aria-selected="false">注册</button>
-      </div>
-
-      <form class="auth-form" id="authForm" novalidate>
-        <label for="authUsername">用户名</label>
-        <input id="authUsername" name="username" type="text" autocomplete="username" maxlength="20" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="2-20 位中英文、数字、下划线">
-        <label for="authPassword">密码</label>
-        <input id="authPassword" name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="至少 6 位">
-        <p class="error" id="authError" role="alert" hidden></p>
-        <button class="primary auth-submit" id="authSubmit" type="submit">登录</button>
-      </form>
-
-      <p class="auth-hint" id="authHint">还没有账号？点上面的「注册」建一个。</p>
-      <!-- 只在「绑定账号」模式下出现：那一层是可选的，必须能退出来。 -->
-      <button class="auth-skip" id="authSkipButton" type="button" hidden>以后再说</button>
+      <button class="primary auth-submit" id="authRetryButton" type="button">刷新重试</button>
     </div>
   </section>
 
