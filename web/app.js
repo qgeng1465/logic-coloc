@@ -874,8 +874,18 @@ async function discover() {
   try {
     // Five candidates prevent same-domain results from crowding out useful
     // cross-disciplinary matches such as immune or ecological feedback.
-    const payload = { text, top_k: 5, request_id: requestId };
-    const data = await request("/api/discover", payload, { signal: controller.signal });
+    const payload = { text, top_k: 5, request_id: requestId, async_mode: true };
+    let data = await request("/api/discover", payload, { signal: controller.signal });
+    if (data.async) {
+      // 后台任务轮询：请求立即结束，避免云托管网关因长时间无响应返回 504。
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        if (controller.signal.aborted) throw new DOMException("分析已取消", "AbortError");
+        const progress = await request(`/api/discover/${encodeURIComponent(data.task_id)}`);
+        if (progress.done) { data = progress.result; break; }
+        setLoading(true, progress.status === "running" ? "正在分析，请稍候…" : "正在排队…", $("discoverButton"));
+      }
+    }
     if (data.code !== 0) {
       state.discoverSessionId = null;
       $("discoverResult").hidden = true;
