@@ -9,6 +9,16 @@ numpy==2.2.6
 scipy==1.18.0
 requests==2.32.3
 
+# ⚠️ 必须有，别删。routes.py 里三个路由（/api/user/avatar、/api/ocr、/api/upload）
+# 用了 `UploadFile = File(...)`，而 fastapi 的 File/Form 支持是**可选依赖**，
+# 单独一条 `fastapi==…` 不会把它装进来。
+# 缺了不是「上传不能用」这么轻 —— 它在**注册路由时**就抛 RuntimeError
+# （fastapi/dependencies/utils.py: ensure_multipart_is_installed），
+# 也就是**应用启动即崩，整站打不开**。
+# 本地之所以看不出来：开发机上被 streamlit 之类无关的包顺手装过（fastapi[standard]
+# 也会带），所以 import 一直是好的；一进干净环境（容器、队友的新机器）就暴露。
+python-multipart==0.0.32
+
 # 图片 OCR（/api/ocr 接口）。会拖入 onnxruntime，镜像体积和冷启动时间明显变大。
 # 若演示不需要「上传截图识字」这个功能，删掉这一行可以大幅瘦身。
 rapidocr_onnxruntime==1.2.3

@@ -123,6 +123,7 @@ python -m pytest logic_coloc/tests/ -q
 | 症状 | 多半是 |
 |---|---|
 | `ModuleNotFoundError: No module named 'logic_coloc'` | 目录名不是 `logic_coloc`（见第一节第 1 步） |
+| 启动即崩，报 `Form data requires "python-multipart"` | 依赖没装全：`pip install -r requirements.txt` 里已有它，别单装 `fastapi`。它不是可选功能，缺了**应用起不来** |
 | 怎么改代码都没反应 / 接口字段还是旧的 | `--reload-dir` 没写绝对路径而静默失效，或服务是改动之前启动的；直接重启 |
 | 所有 AI 功能返回 503 `LLM_BACKEND_UNAVAILABLE` | `.env` 没配或 `LC_API_KEY` 无效；线上检查平台环境变量 |
 | 模型有响应但内容是空的 | `LC_BRIDGE` 写法被改了（加了 `/v1`、尾斜杠或换了域名），静默走错协议 |
