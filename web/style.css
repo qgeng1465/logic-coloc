@@ -729,7 +729,7 @@ body.auth-open { overflow: hidden; }
 /* ---- 笔记编辑器 ---- */
 #noteSheet input, #noteSheet textarea { margin-bottom: 14px; }
 #noteSheet textarea { min-height: 140px; }
-.rich-toolbar { position: sticky; top: 43px; z-index: 2; display: flex; gap: 4px; overflow-x: auto; margin-bottom: 0; padding: 7px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--r-sm) var(--r-sm) 0 0; background: rgba(255,255,255,.94); backdrop-filter: var(--glass-blur-light); -webkit-backdrop-filter: var(--glass-blur-light); }
+.rich-toolbar { position: relative; z-index: 1; display: flex; gap: 4px; overflow-x: auto; margin-bottom: 0; padding: 7px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--r-sm) var(--r-sm) 0 0; background: rgba(255,255,255,.94); backdrop-filter: var(--glass-blur-light); -webkit-backdrop-filter: var(--glass-blur-light); }
 .rich-toolbar button, .rich-toolbar select, .toolbar-color { flex: 0 0 auto; width: 34px; height: 32px; display: grid; place-items: center; margin: 0; border: 0; border-radius: 5px; background: var(--brand-50); padding: 0; font-size: 11px; }
 .rich-toolbar select { width: 94px; }
 .rich-toolbar #fontSize { width: 54px; }
