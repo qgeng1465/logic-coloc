@@ -33,5 +33,6 @@ uploads/
 docs/
 tests/
 assets/
+.github/
 
 # 注意：data/corpus/example.jsonl 是 RAG 语料库，必须进镜像，这里故意不排除。
