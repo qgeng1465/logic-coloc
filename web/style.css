@@ -451,6 +451,8 @@ h3 { font-size: 15px; margin: 24px 0 12px; }
 /* ============================ 底部面板 / 弹层 ============================ */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(31,52,80,.34); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
 .bottom-sheet { position: fixed; z-index: 31; left: 50%; bottom: 0; transform: translateX(-50%); width: min(430px, 100%); height: auto !important; max-height: min(80vh, 720px); overflow-y: auto; background: rgba(252,253,255,.86); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--hairline); border-bottom: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 10px 18px max(24px, env(safe-area-inset-bottom)); box-shadow: 0 -8px 40px rgba(31,52,80,.14); animation: sheet-in .24s ease-out; }
+.sheet-actions .secondary { order: 2; }
+.sheet-actions .primary, .sheet-actions .danger-button { order: 1; }
 .sheet-handle { width: 42px; height: 4px; border-radius: var(--r-pill); background: var(--brand-300); margin: 0 auto 14px; }
 /* 通栏吸顶标题：与面板主体同色 + 发丝分隔线，避免半透明程度不同浮出一块白色矩形 */
 .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: -10px; z-index: 3; margin: 0; padding: 4px 0 6px; background: transparent; border-bottom: 0; }
