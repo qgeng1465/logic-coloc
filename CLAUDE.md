@@ -233,7 +233,14 @@ StaticFiles 的 `directory` 是 **import 期快照**（`api/__init__.py` 里
       # Anthropic 方言：POST {BRIDGE}/v1/messages，x-api-key 头，读 content[] 里 type=="text" 的块
   ```
 
-  ⚠️ **两个条件必须同时成立**才走 OpenAI。任一不满足就静默回落到 Anthropic 方言，打在一个 OpenAI 端点上——表现为「LLM 返回空内容」，且报错信息完全指不到原因。改动 `LC_BRIDGE`（加 `/v1`、加尾斜杠、换等价域名）或换一把不以 `sk-` 开头的 key 都会触发。`tests/test_llm_client.py` 钉住了 Anthropic 分支的行为，改嗅探逻辑会让它失败。
+  ⚠️ **两个条件必须同时成立**才走 OpenAI。任一不满足就静默回落到 Anthropic 方言，打在一个 OpenAI 端点上——表现为「LLM 返回空内容」，且报错信息完全指不到原因。
+
+  **会踩中的写法**（口径以此为准）：
+  - `LC_BRIDGE` 加 `/v1`，或换成不以 `api.openai-next.com` 结尾的域名 → 后缀匹配不上
+  - `LC_API_KEY` 不以 `sk-` 开头 → 域名写对了照样走错协议，**这条最容易漏**
+  - ⚠️ **尾斜杠是安全的**，`.rstrip("/")` 兜住了它 —— 早前「不要加尾斜杠」的说法过重，**已作废，别再写回去**
+
+  `tests/test_llm_client.py` 钉住了 Anthropic 分支的行为，改嗅探逻辑会让它失败。
 - 已知坑：兼容端点上 thinking 传 `"disabled"` + 低 `max_tokens` 会**偶发空响应**；默认 `LC_THINKING=none`（= 不传该字段）+ `max_tokens≥2048` 最稳，不要改回传 disabled。
 
 ## 测试
