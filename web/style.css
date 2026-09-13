@@ -966,8 +966,10 @@ body.auth-open { overflow: hidden; }
 .sheet-heading { position: relative; top: auto; z-index: auto; width: auto; margin: 0; padding: 2px 0 6px; background: transparent; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .history-sheet .sheet-heading, .settings-sheet .sheet-heading, .about-sheet .sheet-heading { width: auto; margin: 0; padding: 2px 0 6px; min-height: 0; }
 
-/* Keep all three import choices visually identical; hovering must not make
-   only “从链接导入” look like a different-coloured card. */
+/* 导入方式卡片必须长得一模一样 —— 悬停/聚焦也不能让某一张变成别的底色。
+   （原来有三张卡，「从链接导入」那张曾因 :first-child 单独变过色；
+   2026-09-13 该入口已删，现在只剩「手动创建」「从截图导入」两张，
+   但这条规则要继续留着：它挡的是「按位次区别对待」，不是「三张」这个数量。） */
 .import-options .import-option,
 .import-options .import-option:first-child,
 .import-options .import-option:hover,

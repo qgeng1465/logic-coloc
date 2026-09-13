@@ -30,9 +30,16 @@
     <section class="knowledge-launcher knowledge-shell" id="knowledgeLauncher">
       <div class="launcher-heading"><h2 id="launcherTitle">导入内容或概念，寻找跨学科同源</h2></div>
       <div class="import-options launcher-options">
-        <button class="import-option launcher-option" type="button" data-launch-import="link"><span>01</span><strong>从链接导入</strong><small>支持知乎、小红书、抖音等链接</small><b>↗</b></button>
-        <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
-        <button class="import-option launcher-option" type="button" data-launch-import="image"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+        <!-- 2026-09-13：「从链接导入」（原 01，文案「支持知乎、小红书、抖音等链接」）已删除。
+             它 POST 的 /api/extract_link 后端从来没注册过 —— 必然是 404，必然弹
+             「该链接被平台限制，解析失败」。而且就算补上这个接口也读不到：知乎对服务端
+             匿名请求直接 403，小红书/抖音是 JS 渲染的空壳。这三家要爬得到得靠「无头浏览器
+             + 自己的登录态池 + 代理池 + 长期维护签名」，跟部署在哪无关，本项目的约束
+             （云托管单实例、镜像只 pip install requirements）一条都不满足。
+             同目录 docs/产品说明.md 里也早写着「后端的链接解析服务尚未实现」。
+             用户的真实需求「分析这篇文章」由「从截图导入」完整覆盖，且那条路是真的通的。 -->
+        <button class="import-option launcher-option" type="button" data-launch-import="manual"><span>01</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+        <button class="import-option launcher-option" type="button" data-launch-import="image"><span>02</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
       </div>
     </section>
     <section class="history-memory knowledge-shell" id="historyMemory"><button class="history-back-button" id="historyBackButton" type="button" aria-label="返回导入方式">‹</button><div class="history-memory-head"><h2>历史记忆</h2><button id="historyMemoryMore" type="button">查看更多 →</button></div><div id="historyMemoryList"></div><button class="secondary history-clear-current" id="clearCurrentHistory" type="button">清空当前模式的历史</button></section>
@@ -282,16 +289,11 @@
     <div class="sheet-handle"></div>
     <div class="sheet-heading"><div><p class="eyebrow">导入到求知</p><h2 id="importSheetTitle">选择导入方式</h2></div><button id="importSheetClose" type="button" aria-label="关闭导入弹窗">×</button></div>
     <div class="import-options" id="importOptions">
-      <button class="import-option" type="button" data-import-panel="linkImportPanel"><span>01</span><strong>从链接导入</strong><small>支持知乎、小红书、抖音等链接</small><b>↗</b></button>
-      <button class="import-option" type="button" data-import-panel="manualImportPanel"><span>02</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
-      <button class="import-option" type="button" data-import-panel="imageImportPanel"><span>03</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
+      <button class="import-option" type="button" data-import-panel="manualImportPanel"><span>01</span><strong>手动创建</strong><small>直接输入或粘贴文字</small><b>＋</b></button>
+      <button class="import-option" type="button" data-import-panel="imageImportPanel"><span>02</span><strong>从截图导入</strong><small>上传图片，自动识别文字</small><b>⌁</b></button>
     </div>
-    <div class="import-panel" id="linkImportPanel" hidden>
-      <button class="import-back" type="button">← 选择其他方式</button><h3>粘贴链接或分享文案</h3>
-      <textarea id="linkImportText" rows="4" placeholder="例如：快来看看 https://xhslink.com/abc123 复制打开"></textarea>
-      <p class="import-feedback" id="linkImportFeedback" hidden></p>
-      <button class="primary import-submit" id="parseLinkButton" type="button">解析链接</button>
-    </div>
+    <!-- 这里原来是 #linkImportPanel（粘贴链接/分享文案 → 解析链接），随「从链接导入」一起去掉了，
+         原因见上面 launcher 那段的注释。 -->
     <div class="import-panel" id="manualImportPanel" hidden>
       <button class="import-back" type="button">← 选择其他方式</button><h3>手动创建内容</h3>
       <textarea id="manualImportText" rows="7" placeholder="输入或粘贴需要解读的文字……"></textarea>

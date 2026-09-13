@@ -197,10 +197,9 @@ async function request(path, payload) {
   return data;
 }
 
-function extractFirstUrl(value) {
-  const match = String(value || "").match(/https?:\/\/[^\s<>"'\]\[）)]+/i);
-  return match ? match[0].replace(/[，。！？、；：,.!?;:]+$/, "") : null;
-}
+// 2026-09-13：这里原来是 extractFirstUrl()，配合 /api/extract_link 做「从链接导入」。
+// 那个后端接口从来没注册过 —— 每次点「解析链接」都是 404，必弹「该链接被平台限制」。
+// 该功能连同入口一起删除，原因见 web/index.html 里 launcher 那段的注释。
 
 // 复习排期，单位秒，**一律以「天」为粒度**。必须与后端 api/card_store.py 的
 // EBBINGHAUS_INTERVALS + EBBINGHAUS_LONG_INTERVALS 首尾相接后逐项一致 —— 两边各算一次
@@ -256,7 +255,7 @@ function setDraftForPanel(panelId, value) {
   const inputId = panelId === "discoverPanel" ? "discoverText" : "explainText";
   $(inputId).value = text;
 }
-function openImportSheet(id) { const target = state.activeKnowledgePanel === "discoverPanel" ? "discoverText" : "explainText"; state.importPanelTarget = state.activeKnowledgePanel; $("manualImportText").value = state.activeKnowledgePanel === "discoverPanel" ? discoverDraftText : explainDraftText; $("linkImportText").value = ""; $("sheetBackdrop").hidden = false; $(id).hidden = false; document.body.classList.add("sheet-open"); }
+function openImportSheet(id) { const target = state.activeKnowledgePanel === "discoverPanel" ? "discoverText" : "explainText"; state.importPanelTarget = state.activeKnowledgePanel; $("manualImportText").value = state.activeKnowledgePanel === "discoverPanel" ? discoverDraftText : explainDraftText; $("sheetBackdrop").hidden = false; $(id).hidden = false; document.body.classList.add("sheet-open"); }
 function closeImportSheet() { $("importSheet").hidden = true; $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); showImportPanel(null); }
 function showImportPanel(panelId) { $("importOptions").hidden = Boolean(panelId); document.querySelectorAll(".import-panel").forEach((panel) => { panel.hidden = panel.id !== panelId; }); }
 function targetInput() { return $(state.importTarget); }
@@ -282,18 +281,9 @@ function showKnowledgeLauncher(panelId) {
 function clearDraftForPanel(panelId) {
   setDraftForPanel(panelId, "");
 }
-async function parseImportedLink() {
-  const url = extractFirstUrl($("linkImportText").value); const button = $("parseLinkButton");
-  if (!url) { $("linkImportFeedback").textContent = "没有识别到以 http 或 https 开头的链接。"; $("linkImportFeedback").hidden = false; return; }
-  button.disabled = true; button.textContent = "解析中…"; $("linkImportFeedback").textContent = `已提取：${url}`; $("linkImportFeedback").hidden = false;
-  try {
-    const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 15000);
-    const response = await authFetch(apiUrl("/api/extract_link"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: controller.signal }); window.clearTimeout(timeout);
-    const data = await response.json().catch(() => ({})); if (!response.ok || data.code !== 0 || !data.text) throw new Error("link import failed");
-    placeImportedText(data.text, state.importPanelTarget === "discoverPanel" ? "导入成功，可以开始寻找同源啦" : "导入成功，可以开始解读啦", state.importPanelTarget);
-  } catch { showToast("该链接被平台限制，解析失败，请尝试截图导入或手动复制文本。"); showImportPanel("imageImportPanel"); }
-  finally { button.disabled = false; button.textContent = "解析链接"; }
-}
+// 2026-09-13：删掉了 parseImportedLink()（「从链接导入」的提交逻辑），它调的
+// /api/extract_link 后端从未注册，必然 404 并弹「该链接被平台限制，解析失败」。
+// 导入弹窗现在只剩「手动创建」「从截图导入」两条路，两条都是通的。
 
 async function importImage(file) {
   if (!file) return; const feedback = $("imageImportFeedback"); feedback.textContent = "正在识别图片…";
@@ -1598,7 +1588,7 @@ document.querySelectorAll("[data-launch-import]").forEach((button) => button.add
   state.importPanelTarget = state.activeKnowledgePanel;
   state.importTarget = state.importPanelTarget === "discoverPanel" ? "discoverText" : "explainText";
   openImportSheet("importSheet");
-  const panels = { link: "linkImportPanel", manual: "manualImportPanel", image: "imageImportPanel" };
+  const panels = { manual: "manualImportPanel", image: "imageImportPanel" };
   showImportPanel(panels[button.dataset.launchImport]);
   if (button.dataset.launchImport === "image") $("imageImportFile").click();
 }));
@@ -1606,7 +1596,6 @@ document.querySelectorAll(".back-to-launcher").forEach((button) => button.addEve
 $("importSheetClose").addEventListener("click", closeImportSheet);
 document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => showImportPanel(button.dataset.importPanel)));
 document.querySelectorAll(".import-back").forEach((button) => button.addEventListener("click", () => showImportPanel(null)));
-$("parseLinkButton").addEventListener("click", parseImportedLink);
 $("confirmManualImport").addEventListener("click", () => { const text = $("manualImportText").value.trim(); if (!text) return; placeImportedText(text, "内容已放入输入框", state.importPanelTarget); });
 $("imageImportFile").addEventListener("change", (event) => importImage(event.target.files?.[0]));
 
