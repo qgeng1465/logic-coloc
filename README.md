@@ -35,7 +35,8 @@ cd logic_coloc
 pip install -r requirements.txt
 ```
 
-Python 建议 **3.11**（本地开发用的 3.13.5 也能跑；3.11 的预编译包最全）。
+Python 用 **3.13**（与 Docker 镜像的 `python:3.13-slim` 一致）。
+别降到 3.11：`scipy==1.18.0` 没有 3.11 能用的包，`pip install` 会直接失败。
 `matplotlib`（离线出图）和 `pytest`（测试）**故意没列进依赖**，需要时自己装。
 
 ### 3. 配 `.env`
@@ -125,7 +126,7 @@ python -m pytest logic_coloc/tests/ -q
 | 怎么改代码都没反应 / 接口字段还是旧的 | `--reload-dir` 没写绝对路径而静默失效，或服务是改动之前启动的；直接重启 |
 | 所有 AI 功能返回 503 `LLM_BACKEND_UNAVAILABLE` | `.env` 没配或 `LC_API_KEY` 无效；线上检查平台环境变量 |
 | 模型有响应但内容是空的 | `LC_BRIDGE` 写法被改了（加了 `/v1`、尾斜杠或换了域名），静默走错协议 |
-| 传图片报错「模型服务暂时不可用」 | 容器缺 OpenCV 的系统库（Dockerfile 已装 `libgl1`/`libglib2.0-0`）；本地则看 `pip install -r requirements.txt` 是否完整 |
+| 传图片报错「模型服务暂时不可用」 | 容器缺 OpenCV 的系统库（Dockerfile 已装 `libgl1` + glib）；本地则看 `pip install -r requirements.txt` 是否完整 |
 | `/api/chat` 报 session not found | 多实例部署，或用了云函数 —— 实例数必须固定为 1 |
 | 重新部署后「我的账号不存在了」 | 没挂持久化卷（见第三节第 3 条） |
 | 页面没样式、logo 裂图 | 前端资源走绝对路径 `/static/*`，必须由后端托管访问；直接双击打开 `index.html` 不行 |

@@ -41,7 +41,7 @@ python -m logic_coloc.precompute
 python -m logic_coloc.make_figures
 ```
 
-依赖锁在 `requirements.txt`（本地已验证版本，Python 建议 3.11）。`matplotlib` 只有 CLI 出图用、`pytest` 只有测试用，两者都**故意没列进去**——要跑 `make_figures` 得自己装 matplotlib。
+依赖锁在 `requirements.txt`（本地已验证版本，Python 用 3.13；镜像也是 3.13，两侧一致）。`matplotlib` 只有 CLI 出图用、`pytest` 只有测试用，两者都**故意没列进去**——要跑 `make_figures` 得自己装 matplotlib。
 
 Windows 控制台默认 GBK，中文/emoji 输出会乱码，跑 Python 前置 `PYTHONIOENCODING=utf-8`。
 

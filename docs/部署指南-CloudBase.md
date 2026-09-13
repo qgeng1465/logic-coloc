@@ -98,7 +98,7 @@ if config.BRIDGE.rstrip("/").endswith("api.openai-next.com") and ...
 
 | 项 | 值 |
 |---|---|
-| 运行时 | **Python 3.11**（本地开发是 3.13.5，但 3.11 的依赖 wheel 最全） |
+| 运行时 | **Python 3.13**（由 Dockerfile 的 `python:3.13-slim` 决定，与本地开发一致） |
 | 构建方式 | Dockerfile（用仓库根目录的 `Dockerfile`） |
 | 容器端口 | `8000`（平台注入 `$PORT` 时会自动覆盖） |
 | **请求超时** | **必须 ≥ 300 秒** |

@@ -20,4 +20,7 @@ pypdf==6.18.1
 # 说明：
 # - matplotlib 只在 make_figures.py / plots.py 里用（离线出图），线上不需要，故意不列。
 # - pytest 只在跑测试时需要，线上不需要，故意不列。
-# - Python 版本建议 3.11（本地开发是 3.13.5，但 onnxruntime/scipy 的 wheel 在 3.11 最全）。
+# - Python 版本锁定 3.13：镜像用 python:3.13-slim，与本地开发环境完全一致。
+#   曾经写过「建议 3.11」，那是错的 —— scipy==1.18.0 没有 3.11 能用的包，
+#   在 3.11 容器里 pip install 直接失败（No matching distribution）。
+#   整个依赖树在 cp313 / linux x86_64 上全部有预编译 wheel，无需现场编译。

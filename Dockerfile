@@ -1,6 +1,6 @@
 # Logic-Coloc —— 云托管（容器）部署镜像
 # 构建上下文 = 本仓库根目录本身，直接 `docker build -t logic-coloc .` 即可。
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
 # 来源：rapidocr_onnxruntime 声明依赖 opencv-python（非 headless 版，链 libGL）。
 #
 # ⚠️ glib 的包名在 Debian 13 (trixie) 改过：time_t 转换把 libglib2.0-0 改名成了
-# libglib2.0-0t64，**旧名字在 trixie 里不存在**。而 python:3.11-slim 这个浮动 tag
+# libglib2.0-0t64，**旧名字在 trixie 里不存在**。而 python:3.13-slim 这个浮动 tag
 # 现在指向的正是 trixie，写死旧名字会直接构建失败（报 "Unable to locate package"）。
 # 这里两个名字都试一遍，base 镜像将来再换 Debian 版本也不会坏。
 RUN set -eux; \
