@@ -13,7 +13,9 @@ from .schemas import CandidateConcept
 class Retriever:
     """Rank corpus concepts using explainable, local string matching."""
 
-    MIN_RETRIEVAL_SCORE = 0.12
+    # 这里原本有个 MIN_RETRIEVAL_SCORE = 0.12，当「有没有锚点」的闸门用。
+    # 它已经被 _has_anchor 取代 —— 拿分数比阈值会让锚点被模型抽词的个数稀释掉
+    # （见 _has_anchor 的注释）。别再把它加回来当调节旋钮，它调不动检索结果。
 
     # Mechanism aliases bridge everyday wording and curated disciplinary terms.
     # They are deliberately narrow: each group describes the same control
@@ -99,6 +101,31 @@ class Retriever:
         active_weights = sum(weight for name, weight in cls.WEIGHTS.items() if name != "logic_profile" or profile is not None)
         return sum(cls.WEIGHTS[name] * value for name, value in active.items()) / active_weights
 
+    @classmethod
+    def _has_anchor(
+        cls,
+        candidate: CandidateConcept,
+        query_text: str,
+        keywords: Sequence[str] | None,
+    ) -> bool:
+        """候选人跟这句话之间有没有一个字面上讲得通的对得上的地方。
+
+        这是 `retrieve` 那道闸门问的问题，答案是「有/没有」。刻意不复用 `_score`：
+        那个分数会随模型这次抽了几个词上下浮动，拿它比阈值会把真实锚点误杀。
+        锚点只有三种来源，都要求字面（或别名组）对得上，不接受“光靠画像相似”。
+        """
+        if not cls._norm(query_text):
+            return False
+        # 1) 概念名直接出现在原话里（最强锚点）
+        if cls._contains(query_text, candidate.concept):
+            return True
+        # 2) 整段描述/机制被原话包含（粘贴式输入）
+        if cls._contains(query_text, candidate.description) or cls._contains(query_text, candidate.mechanism):
+            return True
+        # 3) 关键词对得上：模型抽的词或别名组词，命中候选任意一个关键词即可。
+        #    命中一个就算数 —— 这正是被 1/len(requested) 稀释掉的那个信号。
+        return cls._keyword_score(candidate, query_text, keywords) > 0.0
+
     def retrieve(
         self,
         query: str | dict[str, Any],
@@ -109,17 +136,21 @@ class Retriever:
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
         query_text, profile = self._query_parts(query)
-        scored: list[tuple[CandidateConcept, float, float]] = []
+        scored: list[tuple[CandidateConcept, float, bool]] = []
         for candidate in self.corpus.all():
             if domain is not None and candidate.domain != domain:
                 continue
             score = self._score(candidate, query_text, keywords, domain, profile)
-            lexical_score = self._score(candidate, query_text, keywords, domain, None)
-            scored.append((candidate, score, lexical_score))
+            anchored = self._has_anchor(candidate, query_text, keywords)
+            scored.append((candidate, score, anchored))
         # Require at least one explainable lexical/mechanism anchor, then allow
         # the logic profile to rank cross-domain candidates. Alias groups above
         # make that anchor robust to wording such as “自我纠错” vs “负反馈”.
-        if not any(lexical_score >= self.MIN_RETRIEVAL_SCORE for _, _, lexical_score in scored):
+        #
+        # 闸门判的是「有没有锚点」，所以判成布尔，不比分数：_keyword_score 的分母是
+        # 「模型这次抽了几个词」，同一个「熔断」锚点 1/1 命中打 0.333、1/3 命中只打
+        # 0.111，拿它跟 0.12 比就等于让模型吐词的多少决定检索出不出结果。
+        if not any(anchored for _, _, anchored in scored):
             return []
         results = [
             candidate.model_copy(update={"retrieval_score": min(1.0, max(0.0, score))})
