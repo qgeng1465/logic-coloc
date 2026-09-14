@@ -11,7 +11,8 @@ def test_desktop_pet_entry_and_page_are_wired():
 
     assert 'id="desktopPetCard"' in html
     assert 'id="desktopPetPage"' in html
-    assert "我的桌宠" in html
+    assert "看山" in html
+    assert "我的桌宠" not in html
     assert "学习搭子 · 黑松克" not in html
     assert 'data-pet-action="wave"' in html
     assert 'data-pet-action="crosslink"' in html
