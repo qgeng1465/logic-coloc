@@ -10,7 +10,7 @@ const API_BASE = window.LC_API_BASE || "";
 const DEMO_MODE = true;
 const apiUrl = (path) => `${API_BASE}${path}`;
 let dueEndpointUnavailable = false;
-const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
+const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], explainFollowupCount: 0, zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
 // 草稿也按账号隔离。这里先给未登录时的默认值，登录后由 applyStorageScope 按 uid
 // 重建 key 并重读文本（见下方「账号与登录态」）。
 let draftStorageKeys = {
@@ -88,7 +88,7 @@ function handleUnauthorized() {
    里 token 失效后会重建一个**新 uid**，命名空间仍然照常起作用，所以这层没动。 */
 const buildStorageKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
-  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, researchHistory: `research_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
+  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, researchHistory: `research_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, dailyLogin: `logic_coloc_daily_login_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
 };
 const buildDraftKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
@@ -569,10 +569,12 @@ async function explain() {
   showError("explainError", "");
   if (!text) { showError("explainError", "请先输入需要解释的内容。"); return; }
   state.explainConversation = [];
+  state.explainFollowupCount = 0;
   $("conversation").replaceChildren();
   setLoading(true, "正在提取逻辑结构并请求模型…", $("explainButton"));
   try {
     const data = await request("/api/explain", { text });
+    addPoints(10, "读懂新概念"); playTopbarPetAction("idea");
     setDraftForPanel("explainPanel", text);
     state.explainSessionId = data.session_id;
     addHistory("读懂它", text, state.explainSessionId, data);
@@ -599,6 +601,8 @@ async function chat() {
   addMessage("user", message); $("chatText").value = ""; setLoading(true, "正在思考…", $("chatButton"));
   try {
     const data = await request("/api/chat", { session_id: state.explainSessionId, message });
+    state.explainFollowupCount += 1;
+    if (state.explainFollowupCount === 3) { addPoints(5, "深入追问（达3次）"); playTopbarPetAction("followup"); }
     addMessage("assistant", data.answer || "暂时没有生成回答。");
     const items = getHistory(); const saved = items.find((item) => item.sessionId === state.explainSessionId);
     if (saved) { saved.fullResponse = { ...(saved.fullResponse || {}), conversation: state.explainConversation }; saveHistory(items); }
@@ -906,6 +910,8 @@ async function discover() {
       return;
     }
     state.discoverSessionId = data.session_id;
+    addPoints(15, "发现跨学科同源");
+    playTopbarPetAction("crosslink");
     setDraftForPanel("discoverPanel", text);
     addHistory("跨学科理解", text, state.discoverSessionId, data);
     clearDraftForPanel("discoverPanel");
@@ -992,6 +998,13 @@ function setDesktopPetFrame(action, index) {
   $("desktopPetSprite").alt = `黑松克桌宠：${config.label}`;
   $("desktopPetFrame").textContent = `${action} · ${String(index + 1).padStart(2, "0")}/${String(config.frames).padStart(2, "0")}`;
   $("desktopPetProgress").style.width = `${((index + 1) / config.frames) * 100}%`;
+}
+function playTopbarPetAction(action) {
+  const config = DESKTOP_PET_ACTIONS[action], sprite = $("topbarPetSprite");
+  if (!config || !sprite) return;
+  if (desktopPetTimer) window.clearInterval(desktopPetTimer);
+  let index = 0; sprite.src = desktopPetFramePath(action, index);
+  desktopPetTimer = window.setInterval(() => { index += 1; if (index >= config.frames) { window.clearInterval(desktopPetTimer); desktopPetTimer = null; sprite.src = desktopPetFramePath("normal", 0); return; } sprite.src = desktopPetFramePath(action, index); }, 182);
 }
 
 function restDesktopPet(keepSpeech = true) {
@@ -1578,7 +1591,7 @@ async function applyReviewSchedule(cardRef, quality) {
   // 不能等用户自己退出去再进来。
   if ($("schedulePage") && !$("schedulePage").hidden) { await refreshScheduleCards(); renderSchedule(scheduleFilter); }
 }
-async function slideToNext(quality) { const current = reviewQueue[reviewPosition]; if (!current) return; $("flashcard").classList.add("leaving"); await applyReviewSchedule(current, quality); if (quality === "掌握") { addPoints(10, "复习掌握"); reviewStats.mastered += 1; } else reviewStats.difficult.add(current.id); reviewQueue.splice(reviewPosition, 1); if (quality === "忘记了") reviewQueue.push(current); saveReviewSession(); reviewPosition = 0; window.setTimeout(updateReviewCard, 240); }
+async function slideToNext(quality) { const current = reviewQueue[reviewPosition]; if (!current) return; $("flashcard").classList.add("leaving"); await applyReviewSchedule(current, quality); if (quality === "掌握") { addPoints(10, "复习掌握"); playTopbarPetAction("levelup"); reviewStats.mastered += 1; } else { addPoints(2, "复习考核遗忘/模糊"); playTopbarPetAction("wave"); reviewStats.difficult.add(current.id); } reviewQueue.splice(reviewPosition, 1); if (quality === "忘记了") reviewQueue.push(current); saveReviewSession(); reviewPosition = 0; window.setTimeout(updateReviewCard, 240); }
 function finishReviewAnswer(action) { if (!reviewQueue[reviewPosition]) return; const quality = action === "wrong" || pendingMemoryChoice === "forgot" ? "忘记了" : pendingMemoryChoice === "vague" ? "模糊" : "掌握"; slideToNext(quality); }
 function renderReviewLibrary(filter) { const cards = allReviewCards().filter((card) => filter === "all" || card.status === filter); const list = $("reviewCardList"); list.replaceChildren();
   // 列表为空时以前是整片空白：「未掌握」那个 tab 走的是复习测试、有自己的「今天没有需要复习的
@@ -1817,6 +1830,7 @@ $("desktopPetCard")?.addEventListener("keydown", (event) => { if (event.key === 
 $("desktopPetBack")?.addEventListener("click", closeDesktopPet);
 $("desktopPetSpriteButton")?.addEventListener("click", () => playDesktopPetAction(DESKTOP_PET_RANDOM_ACTIONS[Math.floor(Math.random() * DESKTOP_PET_RANDOM_ACTIONS.length)]));
 document.querySelectorAll("[data-pet-action]").forEach((button) => button.addEventListener("click", () => playDesktopPetAction(button.dataset.petAction)));
+$("topbarPetButton")?.addEventListener("click", openDesktopPet);
 $("zhihuConsentClose")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentCancel")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentConfirm")?.addEventListener("click", confirmZhihuConsent);
@@ -2133,6 +2147,8 @@ async function initAuth() {
   sessionStorage.removeItem(GUEST_RETRY_KEY);
   currentUser = data.user || null;
   authProfile = data.profile || null;
+  const loginDay = new Date().toISOString().slice(0, 10);
+  if (localStorage.getItem(storageKeys.dailyLogin) !== loginDay) { localStorage.setItem(storageKeys.dailyLogin, loginDay); addPoints(3, "每日登录"); playTopbarPetAction("wave"); }
   applyStorageScope(currentUser?.id || "");
   // 顺序要紧，三步不能换：① 认领账号体系之前留在无命名空间 key 里的书架；
   // ② 再擦掉老版本种进 localStorage 的种子数据；③ 最后才进 bootApp()（里面会拉/推

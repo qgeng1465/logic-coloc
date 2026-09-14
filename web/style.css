@@ -1707,17 +1707,24 @@ textarea:focus, input:focus, .rich-editor:focus {
    （试过：居中 + 不透明会把「深度思考」四个字盖住）。所以它站在文字和铃铛之间。
    改 height/width 时，下面 .profile-topbar 的 margin-right 要跟着调成「宽 + 2」——
    margin 负责把文字拦在左边，让长签名走省略号，而不是被图盖住。 */
-.topbar::after {
-  content: "";
+.topbar-pet {
   position: absolute;
   right: 66px;
   top: 2px;
   bottom: 2px;
   width: 88px;
-  background: url("/static/assets/images/kanshan.png") center / contain no-repeat;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
   z-index: 0;
-  pointer-events: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+.topbar-pet img { width: 88px; height: 100px; object-fit: contain; object-position: center; user-select: none; -webkit-user-drag: none; }
+.topbar-pet:focus-visible { outline: 2px solid var(--brand-700); outline-offset: -4px; border-radius: 18px; }
 /* 给看山让出车位：不加这句，长签名会一直排到铃铛底下、被看山盖掉尾巴。
    签名短（比如「你好」）时它完全看不出效果；签名长到默认那句（204px）在窄屏上
    会被省略号截断 —— 截断好过缺一截。 */
