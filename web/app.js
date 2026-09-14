@@ -10,7 +10,7 @@ const API_BASE = window.LC_API_BASE || "";
 const DEMO_MODE = true;
 const apiUrl = (path) => `${API_BASE}${path}`;
 let dueEndpointUnavailable = false;
-const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
+const state = { explainSessionId: null, discoverSessionId: null, activeKnowledgePanel: "discoverPanel", importTarget: "discoverText", importPanelTarget: "discoverPanel", explainConversation: [], explainFollowupCount: 0, zhihuMode: "quick", zhihuResearchItems: [], researchNoteDraft: null, discoverAbortController: null, discoverRequestId: null };
 // 草稿也按账号隔离。这里先给未登录时的默认值，登录后由 applyStorageScope 按 uid
 // 重建 key 并重读文本（见下方「账号与登录态」）。
 let draftStorageKeys = {
@@ -88,7 +88,7 @@ function handleUnauthorized() {
    里 token 失效后会重建一个**新 uid**，命名空间仍然照常起作用，所以这层没动。 */
 const buildStorageKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
-  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, researchHistory: `research_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
+  return { books: `logic_coloc_books_v1${scope}`, notes: `logic_coloc_notes_v1${scope}`, history: `logic_coloc_history_v1${scope}`, explainHistory: `explain_history${scope}`, discoverHistory: `discover_history${scope}`, researchHistory: `research_history${scope}`, points: `logic_coloc_points_v1${scope}`, awards: `logic_coloc_review_awarded_date_v1${scope}`, dailyLogin: `logic_coloc_daily_login_v1${scope}`, user: `logic_coloc_user_v1${scope}`, firstLogin: `logic_coloc_first_login_v1${scope}`, categories: `logic_coloc_note_categories_v1${scope}`, attachmentDrafts: `logic_coloc_attachment_drafts_v1${scope}`, reviewSession: `logic_coloc_review_session_v1${scope}` };
 };
 const buildDraftKeys = (uid) => {
   const scope = uid ? `::${uid}` : "";
@@ -283,6 +283,19 @@ function showKnowledgeLauncher(panelId) {
 }
 function clearDraftForPanel(panelId) {
   setDraftForPanel(panelId, "");
+}
+function resetZhihuSearchSession() {
+  state.zhihuResearchItems = [];
+  state.researchNoteDraft = null;
+  $("zhihuSearchQuery").value = "";
+  $("zhihuSearchResults").replaceChildren();
+  $("zhihuResearchToolbar").hidden = true;
+  $("zhihuSelectionCount").textContent = "已选 0 条（最多 6 条）";
+  $("useZhihuResearch").disabled = true;
+  $("zhihuSetupHelp").hidden = true;
+  $("zhihuSearchFeedback").textContent = state.zhihuMode === "research"
+    ? "输入一个主题，我会从核心概念、机制原理和争议边界三个角度搜索。"
+    : "例如：负反馈为什么能让系统稳定？结果来自知乎开放平台。";
 }
 async function searchZhihu() {
   const input = $("zhihuSearchQuery"), feedback = $("zhihuSearchFeedback"), results = $("zhihuSearchResults");
@@ -556,10 +569,12 @@ async function explain() {
   showError("explainError", "");
   if (!text) { showError("explainError", "请先输入需要解释的内容。"); return; }
   state.explainConversation = [];
+  state.explainFollowupCount = 0;
   $("conversation").replaceChildren();
   setLoading(true, "正在提取逻辑结构并请求模型…", $("explainButton"));
   try {
     const data = await request("/api/explain", { text });
+    addPoints(10, "读懂新概念"); playTopbarPetAction("idea");
     setDraftForPanel("explainPanel", text);
     state.explainSessionId = data.session_id;
     addHistory("读懂它", text, state.explainSessionId, data);
@@ -586,6 +601,8 @@ async function chat() {
   addMessage("user", message); $("chatText").value = ""; setLoading(true, "正在思考…", $("chatButton"));
   try {
     const data = await request("/api/chat", { session_id: state.explainSessionId, message });
+    state.explainFollowupCount += 1;
+    if (state.explainFollowupCount === 3) { addPoints(5, "深入追问（达3次）"); playTopbarPetAction("followup"); }
     addMessage("assistant", data.answer || "暂时没有生成回答。");
     const items = getHistory(); const saved = items.find((item) => item.sessionId === state.explainSessionId);
     if (saved) { saved.fullResponse = { ...(saved.fullResponse || {}), conversation: state.explainConversation }; saveHistory(items); }
@@ -874,8 +891,18 @@ async function discover() {
   try {
     // Five candidates prevent same-domain results from crowding out useful
     // cross-disciplinary matches such as immune or ecological feedback.
-    const payload = { text, top_k: 5, request_id: requestId };
-    const data = await request("/api/discover", payload, { signal: controller.signal });
+    const payload = { text, top_k: 5, request_id: requestId, async_mode: true };
+    let data = await request("/api/discover", payload, { signal: controller.signal });
+    if (data.async) {
+      // 后台任务轮询：请求立即结束，避免云托管网关因长时间无响应返回 504。
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        if (controller.signal.aborted) throw new DOMException("分析已取消", "AbortError");
+        const progress = await request(`/api/discover/${encodeURIComponent(data.task_id)}`, null, { method: "GET" });
+        if (progress.done) { data = progress.result; break; }
+        setLoading(true, progress.status === "running" ? "正在分析，请稍候…" : "正在排队…", $("discoverButton"));
+      }
+    }
     if (data.code !== 0) {
       state.discoverSessionId = null;
       $("discoverResult").hidden = true;
@@ -883,6 +910,8 @@ async function discover() {
       return;
     }
     state.discoverSessionId = data.session_id;
+    addPoints(15, "发现跨学科同源");
+    playTopbarPetAction("crosslink");
     setDraftForPanel("discoverPanel", text);
     addHistory("跨学科理解", text, state.discoverSessionId, data);
     clearDraftForPanel("discoverPanel");
@@ -935,6 +964,116 @@ function toggleZhihuSelectAll() {
   $("toggleZhihuSelectAll").textContent = shouldSelect ? "取消全选" : "全选";
 }
 
+const DESKTOP_PET_ACTIONS = Object.freeze({
+  normal: { label: "待机", frames: 9, speech: "休息一下，整理好思路再出发。" },
+  wave: { label: "挥手打招呼", frames: 12, speech: "嗨！今天也一起学点新东西吧！" },
+  idea: { label: "灵感时刻", frames: 12, speech: "叮！这个想法值得记进笔记。" },
+  followup: { label: "深入追问", frames: 16, speech: "让我戴好眼镜，我们再往深处想一层。" },
+  crosslink: { label: "发现同源", frames: 16, speech: "找到一条跨学科连接，原来它们共享同一种逻辑！" },
+  levelup: { label: "庆祝进步", frames: 16, speech: "撒花！每一点积累都在让你变得更厉害。" },
+});
+const DESKTOP_PET_RANDOM_ACTIONS = ["wave", "idea", "followup", "crosslink"];
+const desktopPetReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let desktopPetTimer = null;
+let desktopPetPreloaded = false;
+
+function desktopPetFramePath(action, index) {
+  return `/static/assets/pet/${action}/${action}_${index + 1}.webp`;
+}
+function topbarPetFramePath(action, index) {
+  return `/static/assets/pet/topbar/${action}/${action}_${index + 1}.webp`;
+}
+
+function preloadDesktopPetFrames() {
+  if (desktopPetPreloaded) return;
+  desktopPetPreloaded = true;
+  Object.entries(DESKTOP_PET_ACTIONS).forEach(([action, config]) => {
+    for (let index = 0; index < config.frames; index += 1) {
+      const image = new Image(); image.src = desktopPetFramePath(action, index);
+    }
+  });
+}
+
+function setDesktopPetFrame(action, index) {
+  const config = DESKTOP_PET_ACTIONS[action];
+  if (!config || !$("desktopPetSprite")) return;
+  $("desktopPetSprite").src = desktopPetFramePath(action, index);
+  $("desktopPetSprite").alt = `看山：${config.label}`;
+  $("desktopPetFrame").textContent = `${action} · ${String(index + 1).padStart(2, "0")}/${String(config.frames).padStart(2, "0")}`;
+  $("desktopPetProgress").style.width = `${((index + 1) / config.frames) * 100}%`;
+}
+let topbarPetTimer = null;
+let topbarPetPauseTimer = null;
+function clearTopbarPetTimers() {
+  if (topbarPetTimer) { window.clearInterval(topbarPetTimer); topbarPetTimer = null; }
+  if (topbarPetPauseTimer) { window.clearTimeout(topbarPetPauseTimer); topbarPetPauseTimer = null; }
+}
+function startTopbarGreetingLoop() {
+  const sprite = $("topbarPetSprite"), config = DESKTOP_PET_ACTIONS.wave;
+  if (!sprite || !config) return;
+  clearTopbarPetTimers();
+  let index = 0;
+  sprite.src = topbarPetFramePath("wave", index);
+  if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
+  topbarPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
+    sprite.src = topbarPetFramePath("wave", index);
+  }, 182);
+}
+function playTopbarPetAction(action) {
+  const config = DESKTOP_PET_ACTIONS[action], sprite = $("topbarPetSprite");
+  if (!config || !sprite) return;
+  clearTopbarPetTimers();
+  let index = 0; sprite.src = topbarPetFramePath(action, index);
+  if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
+  topbarPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
+    sprite.src = topbarPetFramePath(action, index);
+  }, 182);
+}
+
+function restDesktopPet(keepSpeech = true) {
+  if (desktopPetTimer) { window.clearInterval(desktopPetTimer); desktopPetTimer = null; }
+  document.querySelectorAll("[data-pet-action]").forEach((button) => button.classList.remove("is-playing"));
+  if (!$("desktopPetState")) return;
+  $("desktopPetState").textContent = DESKTOP_PET_ACTIONS.normal.label;
+  if (!keepSpeech) $("desktopPetSpeech").textContent = "今天也一起学点新东西吧！";
+  setDesktopPetFrame("normal", 0);
+}
+
+function playDesktopPetAction(action) {
+  const config = DESKTOP_PET_ACTIONS[action];
+  if (!config || !$("desktopPetSprite")) return;
+  if (desktopPetTimer) window.clearInterval(desktopPetTimer);
+  document.querySelectorAll("[data-pet-action]").forEach((button) => button.classList.toggle("is-playing", button.dataset.petAction === action));
+  $("desktopPetState").textContent = config.label;
+  $("desktopPetSpeech").textContent = config.speech;
+  if (desktopPetReduceMotion) { setDesktopPetFrame(action, config.frames - 1); desktopPetTimer = window.setTimeout(() => restDesktopPet(true), 700); return; }
+  let index = 0;
+  setDesktopPetFrame(action, index);
+  desktopPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { restDesktopPet(true); return; }
+    setDesktopPetFrame(action, index);
+  }, 182);
+}
+
+function openDesktopPet() {
+  preloadDesktopPetFrames();
+  const points = getPoints(), level = getLevelInfo(points);
+  $("desktopPetEnergy").textContent = `${level.level} · ${points} 能量`;
+  activateAppPage("desktopPetPage");
+  playDesktopPetAction("wave");
+}
+
+function closeDesktopPet() {
+  restDesktopPet(false);
+  renderProfile();
+  activateAppPage("petPage");
+}
+
 function activatePanel(panelId) {
   showKnowledgeLauncher(panelId);
 }
@@ -945,7 +1084,8 @@ function activateAppPage(pageId) {
   document.querySelectorAll(".app-page").forEach((item) => { item.hidden = item.id !== pageId; });
   const tabs = document.querySelectorAll(".bottom-tab");
   tabs.forEach((item) => { item.classList.remove("active"); item.setAttribute("aria-selected", "false"); });
-  const activeTab = document.querySelector(`.bottom-tab[data-app-page="${pageId}"]`);
+  const tabPageId = pageId === "desktopPetPage" ? "petPage" : pageId;
+  const activeTab = document.querySelector(`.bottom-tab[data-app-page="${tabPageId}"]`);
   if (activeTab) { activeTab.classList.add("active"); activeTab.setAttribute("aria-selected", "true"); }
   const settingsButton = $("settingsButton");
   if (settingsButton) settingsButton.hidden = pageId !== "petPage";
@@ -1478,7 +1618,7 @@ async function applyReviewSchedule(cardRef, quality) {
   // 不能等用户自己退出去再进来。
   if ($("schedulePage") && !$("schedulePage").hidden) { await refreshScheduleCards(); renderSchedule(scheduleFilter); }
 }
-async function slideToNext(quality) { const current = reviewQueue[reviewPosition]; if (!current) return; $("flashcard").classList.add("leaving"); await applyReviewSchedule(current, quality); if (quality === "掌握") { addPoints(10, "复习掌握"); reviewStats.mastered += 1; } else reviewStats.difficult.add(current.id); reviewQueue.splice(reviewPosition, 1); if (quality === "忘记了") reviewQueue.push(current); saveReviewSession(); reviewPosition = 0; window.setTimeout(updateReviewCard, 240); }
+async function slideToNext(quality) { const current = reviewQueue[reviewPosition]; if (!current) return; $("flashcard").classList.add("leaving"); await applyReviewSchedule(current, quality); if (quality === "掌握") { addPoints(10, "复习掌握"); playTopbarPetAction("levelup"); reviewStats.mastered += 1; } else { addPoints(2, "复习考核遗忘/模糊"); playTopbarPetAction("wave"); reviewStats.difficult.add(current.id); } reviewQueue.splice(reviewPosition, 1); if (quality === "忘记了") reviewQueue.push(current); saveReviewSession(); reviewPosition = 0; window.setTimeout(updateReviewCard, 240); }
 function finishReviewAnswer(action) { if (!reviewQueue[reviewPosition]) return; const quality = action === "wrong" || pendingMemoryChoice === "forgot" ? "忘记了" : pendingMemoryChoice === "vague" ? "模糊" : "掌握"; slideToNext(quality); }
 function renderReviewLibrary(filter) { const cards = allReviewCards().filter((card) => filter === "all" || card.status === filter); const list = $("reviewCardList"); list.replaceChildren();
   // 列表为空时以前是整片空白：「未掌握」那个 tab 走的是复习测试、有自己的「今天没有需要复习的
@@ -1712,8 +1852,12 @@ $("settingsSheetClose").addEventListener("click", closeSettingsSheet);
 $("accountSettingsButton").addEventListener("click", () => { closeSettingsSheet(); openProfileSheet(); });
 $("aboutKnowledgeButton").addEventListener("click", openAboutSheet);
 $("toggleZhihuSelectAll")?.addEventListener("click", toggleZhihuSelectAll);
-$("zhihuLibraryCard")?.addEventListener("click", openZhihuLibrary);
-$("zhihuLibraryCard")?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openZhihuLibrary(); } });
+$("desktopPetCard")?.addEventListener("click", openDesktopPet);
+$("desktopPetCard")?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDesktopPet(); } });
+$("desktopPetBack")?.addEventListener("click", closeDesktopPet);
+$("desktopPetSpriteButton")?.addEventListener("click", () => playDesktopPetAction(DESKTOP_PET_RANDOM_ACTIONS[Math.floor(Math.random() * DESKTOP_PET_RANDOM_ACTIONS.length)]));
+document.querySelectorAll("[data-pet-action]").forEach((button) => button.addEventListener("click", () => playDesktopPetAction(button.dataset.petAction)));
+$("topbarPetButton")?.addEventListener("click", openDesktopPet);
 $("zhihuConsentClose")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentCancel")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentConfirm")?.addEventListener("click", confirmZhihuConsent);
@@ -1734,7 +1878,7 @@ $("historyMemoryMore").addEventListener("click", openHistory);
 $("clearCurrentHistory").addEventListener("click", () => { const type = historyFilterType; saveHistory(getHistory().filter((item) => item.type !== type)); renderHistory(); renderHistoryMemory(); showToast("当前模式历史已清空"); });
 $("backToTop").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
 window.addEventListener("scroll", () => $("backToTop").classList.toggle("visible", window.scrollY > 300), { passive: true });
-$("sheetBackdrop").addEventListener("click", () => { closeMappingSheet(); closeSaveCardSheet(); closeNoteSheet(); closeCardSheet(); closeImportSheet(); closeBookSheet(); closeProfileSheet(); closeSettingsSheet(); closeAboutSheet(); closeNoteActionSheet(); closeFolderActionSheet(); closeTemplateSheet(); closeNoteCreateSheet(); closeFolderSheet(); $("noteMoveSheet").hidden = true; $("batchMoveSheet").hidden = true; $("batchDeleteConfirm").hidden = true; $("cardDeleteConfirm").hidden = true; $("historyDeleteConfirm").hidden = true; $("reviewCardActionSheet").hidden = true; $("reviewDeleteConfirm").hidden = true; });
+$("sheetBackdrop").addEventListener("click", () => { closeMappingSheet(); closeSaveCardSheet(); closeNoteSheet(); closeCardSheet(); closeImportSheet(); closeBookSheet(); closeProfileSheet(); closeSettingsSheet(); closeAboutSheet(); closeNoteActionSheet(); closeFolderActionSheet(); closeTemplateSheet(); closeNoteCreateSheet(); closeFolderSheet(); $("noteMoveSheet").hidden = true; $("batchMoveSheet").hidden = true; $("batchDeleteConfirm").hidden = true; $("cardDeleteConfirm").hidden = true; $("bookDeleteConfirm").hidden = true; $("historyDeleteConfirm").hidden = true; $("reviewCardActionSheet").hidden = true; $("reviewDeleteConfirm").hidden = true; });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape") { closeMappingSheet(); closeSaveCardSheet(); } });
 document.querySelectorAll(".bottom-tab").forEach((tab) => tab.addEventListener("click", () => activateAppPage(tab.dataset.appPage)));
 
@@ -1745,12 +1889,16 @@ document.querySelectorAll("[data-launch-import]").forEach((button) => button.add
   state.importTarget = state.importPanelTarget === "discoverPanel" ? "discoverText" : "explainText";
   openImportSheet("importSheet");
   const panels = { manual: "manualImportPanel", image: "imageImportPanel", zhihu: "zhihuSearchPanel" };
+  if (button.dataset.launchImport === "zhihu") resetZhihuSearchSession();
   showImportPanel(panels[button.dataset.launchImport]);
   if (button.dataset.launchImport === "image") $("imageImportFile").click();
 }));
 document.querySelectorAll(".back-to-launcher").forEach((button) => button.addEventListener("click", () => showKnowledgeLauncher(state.activeKnowledgePanel)));
 $("importSheetClose").addEventListener("click", closeImportSheet);
-document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => showImportPanel(button.dataset.importPanel)));
+document.querySelectorAll("[data-import-panel]").forEach((button) => button.addEventListener("click", () => {
+  if (button.dataset.importPanel === "zhihuSearchPanel") resetZhihuSearchSession();
+  showImportPanel(button.dataset.importPanel);
+}));
 document.querySelectorAll(".import-back").forEach((button) => button.addEventListener("click", () => showImportPanel(null)));
 $("confirmManualImport").addEventListener("click", () => { const text = $("manualImportText").value.trim(); if (!text) return; placeImportedText(text, "内容已放入输入框", state.importPanelTarget); });
 $("confirmZhihuSearch").addEventListener("click", searchZhihu);
@@ -1769,7 +1917,10 @@ $("imageImportFile").addEventListener("change", (event) => importImage(event.tar
 $("backToShelf").addEventListener("click", () => { $("bookDetail").hidden = true; $("bookList").hidden = false; $("newBookButton").hidden = false; });
 $("newBookButton").addEventListener("click", () => openBookSheet());
 $("bookSheetClose").addEventListener("click", closeBookSheet); $("cancelBook").addEventListener("click", closeBookSheet);
-$("deleteBookButton").addEventListener("click", () => { if (!editingBookId) return; if (!window.confirm("确定删除这本书吗？书中的卡片也会一起删除。")) return; const books = getBooks().filter((book) => book.id !== editingBookId); localStorage.setItem(storageKeys.books, JSON.stringify(books)); closeBookSheet(); renderBooks(); showToast("书本已删除"); });
+$("deleteBookButton").addEventListener("click", () => { if (!editingBookId) return; $("bookSheet").hidden = true; $("bookDeleteConfirm").hidden = false; });
+$("closeBookDeleteConfirm").addEventListener("click", () => { $("bookDeleteConfirm").hidden = true; $("bookSheet").hidden = false; });
+$("cancelBookDelete").addEventListener("click", () => { $("bookDeleteConfirm").hidden = true; $("bookSheet").hidden = false; });
+$("confirmBookDelete").addEventListener("click", () => { if (!editingBookId) return; const books = getBooks().filter((book) => book.id !== editingBookId); localStorage.setItem(storageKeys.books, JSON.stringify(books)); $("bookDeleteConfirm").hidden = true; closeBookSheet(); renderBooks(); showToast("书本已删除"); });
 $("bookCoverFile").addEventListener("change", async (event) => { pendingBookCoverFile = event.target.files?.[0] || null; if (!pendingBookCoverFile) return; pendingBookCoverUrl = await fileDataUrl(pendingBookCoverFile); $("bookCoverPreview").innerHTML = `<img alt="封面预览">`; $("bookCoverPreview").querySelector("img").src = pendingBookCoverUrl; });
 $("saveBookButton").addEventListener("click", async () => {
   const name = $("bookName").value.trim(); if (!name) return;
@@ -1832,7 +1983,7 @@ $("importImageMenu").addEventListener("click", () => { quickImportKind = "image"
 $("importPdfMenu").addEventListener("click", () => { quickImportKind = "pdf"; $("quickNoteImport").accept = "application/pdf"; $("quickNoteImport").click(); });
 $("quickNoteImport").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (!file) return; $("noteCreateSheet").hidden = true; pendingNoteTemplate = defaultNoteTemplate(); openNoteSheet(null, pendingNoteTemplate); await addImportedAttachment(file); $("noteTitle").value = file.name.replace(/\.[^.]+$/, ""); event.target.value = ""; });
 $("closeFolderSheet").addEventListener("click", closeFolderSheet); $("cancelFolder").addEventListener("click", closeFolderSheet);
-$("saveFolder").addEventListener("click", () => { const name = $("folderName").value.trim(); if (!name) return; const categories = getCategories(); const category = { id: makeId("category"), name, coverUrl: "", syncStatus: "default" }; categories.push(category); saveCategories(categories); currentCategory = category.id; renderCategories(); renderNotes($("noteSearch").value); const noteSelect = $("noteCategorySelect"); if (noteSelect && !$("noteSheet").hidden) { noteSelect.value = category.id; } closeFolderSheet(); addPoints(5, "整理书架/新建书籍"); showToast("文件夹已创建"); });
+$("saveFolder").addEventListener("click", () => { const name = $("folderName").value.trim(); if (!name) return; const categories = getCategories(); const category = { id: makeId("category"), name, coverUrl: "", syncStatus: "default" }; categories.push(category); saveCategories(categories); currentCategory = category.id; renderCategories(); renderNotes($("noteSearch").value); const noteSelect = $("noteCategorySelect"); if (noteSelect && !$("noteSheet").hidden) { const createOption = noteSelect.querySelector('option[value="__new_category__"]'); noteSelect.insertBefore(new Option(category.name, category.id), createOption); noteSelect.value = category.id; } closeFolderSheet(); addPoints(5, "整理书架/新建书籍"); showToast(`文件夹“${name}”已创建并选中`); });
 $("batchSelectAll").addEventListener("click", () => { const visible = getNotes().filter((note) => currentCategory === "all" ? !noteFolderId(note) : noteFolderId(note) === currentCategory); if (selectedNoteIds.size === visible.length) selectedNoteIds.clear(); else visible.forEach((note) => selectedNoteIds.add(note.id)); renderNotes($("noteSearch").value); });
 $("batchMove").addEventListener("click", () => { if (!selectedNoteIds.size) return showToast("请先选择笔记"); openBatchMove(); }); $("closeBatchMove").addEventListener("click", () => { $("batchMoveSheet").hidden = true; $("sheetBackdrop").hidden = true; });
 $("batchDelete").addEventListener("click", () => { if (!selectedNoteIds.size) return showToast("请先选择笔记"); $("batchDeleteText").textContent = `将删除 ${selectedNoteIds.size} 篇笔记，删除后无法恢复。`; $("sheetBackdrop").hidden = false; $("batchDeleteConfirm").hidden = false; });
@@ -1854,6 +2005,7 @@ $("saveNote").addEventListener("click", async () => {
   const existing = getNotes().find((item) => item.id === editingNoteId); const attachments = pendingAttachments.filter((file) => file.noteId === editingNoteId).map((file) => ({ ...file, noteId: editingNoteId })); const note = { id: editingNoteId, folderId: $("noteCategorySelect").value, title: title || "未命名笔记", content: body || NOTE_EMPTY_BODY, coverUrl: pendingNoteCoverUrl, date: new Date().toISOString(), attachments, template: clone(pendingNoteTemplate), starred: existing?.starred || false, syncStatus: "local" }; saveNote(note); saveAttachmentDrafts(); if (!existing) addPoints(10, "新建笔记");
   if (DEMO_MODE) { showToast("演示笔记已保存（刷新页面后自动清空）"); } else { try { const response = await authFetch(apiUrl("/api/notes/save"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...note, syncStatus: "synced" }) }); if (!response.ok) throw new Error(); note.syncStatus = "synced"; saveNote(note); showToast("笔记已同步云端"); } catch { showToast("后端暂未连通，已保存在本机浏览器中。"); } }
   renderNotes($("noteSearch").value); renderProfile(); closeNoteSheet();
+  activateAppPage("notesPage");
 });
 $("noteAttachmentFile").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (!file) return; await addImportedAttachment(file); event.target.value = ""; }); // TODO: replace /api/upload and blob: URLs with permanent server URLs when storage API is ready.
 $("noteCoverFile").addEventListener("change", async (event) => { const file = event.target.files?.[0]; if (!file) return; pendingNoteCoverFile = file; pendingNoteCoverUrl = await fileDataUrl(file); renderTemplateSelection(); try { pendingNoteCoverUrl = await uploadFile(file, "note_cover"); renderTemplateSelection(); showToast("封面已同步云端"); } catch { showToast("后端暂未连通，封面已保存在本机浏览器中。"); } event.target.value = ""; });
@@ -2022,6 +2174,8 @@ async function initAuth() {
   sessionStorage.removeItem(GUEST_RETRY_KEY);
   currentUser = data.user || null;
   authProfile = data.profile || null;
+  const loginDay = new Date().toISOString().slice(0, 10);
+  if (localStorage.getItem(storageKeys.dailyLogin) !== loginDay) { localStorage.setItem(storageKeys.dailyLogin, loginDay); addPoints(3, "每日登录"); playTopbarPetAction("wave"); }
   applyStorageScope(currentUser?.id || "");
   // 顺序要紧，三步不能换：① 认领账号体系之前留在无命名空间 key 里的书架；
   // ② 再擦掉老版本种进 localStorage 的种子数据；③ 最后才进 bootApp()（里面会拉/推
@@ -2044,6 +2198,7 @@ $("chatText").addEventListener("keydown", (event) => { if (event.key === "Enter"
 
 syncHistoryBack();
 initAuth();
+startTopbarGreetingLoop();
 
 
 

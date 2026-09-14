@@ -103,9 +103,7 @@ body::after {
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: .04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E");
-  background-size: 160px 160px;
+  display: none;
 }
 
 body {
@@ -470,8 +468,10 @@ select { width: 100%; height: 44px; border: 1px solid var(--line-strong); border
 .settings-menu .sheet-menu-button { width: 100%; padding: 18px 16px; border-radius: var(--r-lg); margin-bottom: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.72); }
 /* 图标按 id 点对点指定，不用 :first-child / :last-child —— 菜单项会增减，
    位置选择器会在「加了「退出登录」」这种改动里悄悄错位（原本 ⓘ 就跑到了退出上）。 */
-.settings-menu #accountSettingsButton::before { content: "♙"; margin-right: 12px; color: var(--brand-600); }
-.settings-menu #aboutKnowledgeButton::before { content: "ⓘ"; margin-right: 12px; color: var(--brand-600); }
+.settings-menu .sheet-menu-button::before { width: 24px; flex: 0 0 24px; margin-right: 12px; color: var(--brand-600); text-align: center; }
+.settings-menu #accountSettingsButton::before { content: "♙"; }
+.settings-menu #connectZhihuButton::before { content: "知"; font-size: 14px; font-weight: 800; }
+.settings-menu #aboutKnowledgeButton::before { content: "ⓘ"; }
 /* 上面 .settings-menu 那两项的 ♙ / ⓘ 图标**成对存在**，这是必须的：
    .sheet-menu-button 是 space-between 布局，图标、文字、› 各算一个 flex 项，
    一行有图标、相邻一行没有，那行的文字就会被挤到最左边。新加菜单项时成对加。 */
@@ -806,10 +806,48 @@ body.auth-open { overflow: hidden; }
 .zhihu-research-note-content ul, .zhihu-research-note-content ol { margin: 6px 0 12px 22px; padding: 0; }
 #noteBody h3 { margin: 16px 0 8px; color: var(--brand-800); font-size: 19px; line-height: 1.45; }
 #noteBody ul, #noteBody ol { margin: 8px 0 14px 24px; }
-.zhihu-library-card { position: relative; cursor: pointer; }
-.zhihu-library-card:focus-visible { outline: 3px solid var(--brand-500); outline-offset: 3px; }
-.zhihu-library-card small { display:block; margin-top:4px; color:var(--muted); }
+.desktop-pet-card { position: relative; cursor: pointer; }
+.desktop-pet-card:focus-visible { outline: 3px solid var(--brand-500); outline-offset: 3px; }
+.desktop-pet-card small { display:block; margin-top:4px; color:var(--muted); }
+.pet-card-icon { overflow: hidden; background: linear-gradient(145deg, #f8fbff, var(--brand-100)); }
+.pet-card-icon img { width: 46px; height: 46px; object-fit: contain; transform: translateY(4px); }
 .kanshan-card-arrow { margin-left:auto; align-self:center; font-size:28px; color:var(--brand-700); }
+
+/* ---- 我的桌宠 ---- */
+.desktop-pet-page { padding-top: 18px; }
+.pet-page-back { margin: 0 0 12px; }
+.pet-page-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.pet-page-heading h2 { margin: 3px 0 0; font-size: 25px; }
+.pet-page-heading .eyebrow { margin: 0; }
+.pet-energy-chip { flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--line); border-radius: var(--r-pill); background: rgba(255,255,255,.76); color: var(--brand-700); font-size: 12px; font-weight: 800; box-shadow: var(--sh-1); }
+.pet-stage-card { position: relative; display: grid; justify-items: center; overflow: hidden; min-height: 415px; padding: 22px 18px 16px; border: 1px solid var(--hairline); border-radius: var(--r-xl); background: linear-gradient(160deg, rgba(255,255,255,.88), rgba(228,239,253,.70)); box-shadow: var(--sh-2); }
+.pet-stage-card::before, .pet-stage-card::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; filter: blur(2px); }
+.pet-stage-card::before { width: 210px; height: 210px; right: -85px; top: 70px; background: rgba(137,194,255,.18); }
+.pet-stage-card::after { width: 160px; height: 160px; left: -70px; bottom: 20px; background: rgba(255,188,207,.14); }
+.pet-speech { position: relative; z-index: 2; min-height: 45px; margin: 0 0 4px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; background: rgba(255,255,255,.88); color: var(--ink-soft); font-size: 13px; line-height: 1.55; box-shadow: var(--sh-1); }
+.pet-sprite-button { position: relative; z-index: 1; display: grid; place-items: end center; width: 100%; height: 286px; margin: -2px 0 0; border: 0; background: transparent; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pet-sprite-button:focus-visible { outline: 3px solid var(--brand-400); outline-offset: -4px; border-radius: 50%; }
+.pet-sprite-button:active img { transform: translateY(2px) scale(.985); }
+.pet-stage-glow { position: absolute; left: 50%; bottom: 13px; width: 245px; height: 82px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(103,170,243,.22), transparent); }
+.pet-sprite-button img { position: relative; z-index: 1; width: min(286px, 82vw); height: 286px; object-fit: contain; object-position: center bottom; transition: transform .12s ease; user-select: none; -webkit-user-drag: none; }
+.pet-status-row { position: relative; z-index: 2; display: flex; align-items: center; gap: 7px; min-height: 24px; color: var(--muted); font-size: 11px; }
+.pet-status-row strong { color: var(--ink); font-size: 13px; }
+.pet-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-500); box-shadow: 0 0 0 4px rgba(103,170,243,.13); }
+.pet-progress { position: relative; z-index: 2; width: min(250px, 75%); height: 4px; margin-top: 8px; overflow: hidden; border-radius: var(--r-pill); background: rgba(103,170,243,.12); }
+.pet-progress i { display: block; width: 11%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand-400), var(--brand-700)); transition: width .09s linear; }
+.pet-actions-panel { margin-top: 16px; padding: 17px; border: 1px solid var(--hairline); border-radius: var(--r-xl); background: rgba(255,255,255,.68); box-shadow: var(--sh-1); }
+.pet-actions-heading h3 { margin: 0; font-size: 20px; }
+.pet-actions-heading p { margin: 5px 0 15px; color: var(--muted); font-size: 13px; }
+.pet-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+.pet-action-grid button { min-width: 0; min-height: 72px; display: grid; grid-template-columns: 32px minmax(0,1fr); grid-template-rows: auto auto; gap: 1px 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(255,255,255,.78); color: var(--ink); text-align: left; box-shadow: var(--sh-1); transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+.pet-action-grid button > span { grid-row: 1 / 3; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--brand-50); font-size: 17px; }
+.pet-action-grid button strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.pet-action-grid button small { color: var(--muted); font-size: 12px; }
+.pet-action-grid button:hover, .pet-action-grid button.is-playing { border-color: var(--brand-400); background: var(--brand-50); transform: translateY(-1px); }
+.pet-action-grid button.is-playing { box-shadow: 0 0 0 2px rgba(103,170,243,.13), var(--sh-1); }
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite-button img, .pet-action-grid button, .pet-progress i { transition: none; }
+}
 .zhihu-consent-sheet p { margin: 8px 0; line-height: 1.65; }
 .zhihu-consent-sheet .muted-copy { color: var(--muted); font-size: 14px; }
 .zhihu-research-note-preview { order: -1; display: grid; gap: 10px; padding: 16px; border: 2px solid var(--brand-400); border-radius: var(--r-lg); background: #fff; box-shadow: var(--sh-2); }
@@ -1613,7 +1651,43 @@ textarea:focus, input:focus, .rich-editor:focus {
     radial-gradient(84% 38% at 70% 90%, rgba(137, 194, 255, .36) 0%, rgba(137, 194, 255, 0) 80%),
     radial-gradient(76% 34% at 6% 92%, rgba(180, 212, 255, .42) 0%, rgba(180, 212, 255, 0) 80%),
     linear-gradient(150deg, #DCEAFC 0%, #E6F0FD 40%, #D6E6FA 100%);
-  filter: blur(46px);
+  /* 径向渐变本身已经柔和；整页 blur 会在滚动时触发昂贵的重绘。 */
+  filter: none;
+}
+
+/* H5 性能模式：小屏设备避免多个 fixed/sticky 层同时做实时背景模糊。 */
+@media (max-width: 600px) {
+  .topbar,
+  .follow-up,
+  .local-loading,
+  .sheet-backdrop,
+  .bottom-sheet,
+  .bottom-nav,
+  .review-actions,
+  .review-manage-toolbar,
+  .rich-toolbar,
+  .batch-toolbar,
+  .fullscreen-page > header,
+  .toast {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  /* 用固定渐变、亮边和阴影模拟磨砂玻璃；没有实时取样，也没有背景动画。 */
+  .topbar,
+  .bottom-sheet,
+  .bottom-nav,
+  .review-manage-toolbar,
+  .batch-toolbar,
+  .fullscreen-page > header {
+    background-image:
+      linear-gradient(135deg, rgba(255,255,255,.72), rgba(235,244,255,.52)),
+      radial-gradient(circle at 86% 8%, rgba(180,212,255,.42), transparent 42%);
+    background-color: rgba(244,249,255,.96);
+    border-color: rgba(255,255,255,.82);
+    box-shadow: 0 10px 28px rgba(46,78,118,.10), inset 0 1px 0 rgba(255,255,255,.94);
+  }
+  .sheet-backdrop { background: rgba(31,52,80,.28); }
+  .toast { background: rgba(31,52,80,.94); }
 }
 
 /* ==========================================================================
@@ -1633,21 +1707,28 @@ textarea:focus, input:focus, .rich-editor:focus {
    （试过：居中 + 不透明会把「深度思考」四个字盖住）。所以它站在文字和铃铛之间。
    改 height/width 时，下面 .profile-topbar 的 margin-right 要跟着调成「宽 + 2」——
    margin 负责把文字拦在左边，让长签名走省略号，而不是被图盖住。 */
-.topbar::after {
-  content: "";
+.topbar-pet {
   position: absolute;
   right: 66px;
   top: 2px;
   bottom: 2px;
-  width: 88px;
-  background: url("/static/assets/images/kanshan.png") center / contain no-repeat;
+  width: 112px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
   z-index: 0;
-  pointer-events: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+.topbar-pet img { width: auto; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; object-position: center bottom; user-select: none; -webkit-user-drag: none; transform: none; }
+.topbar-pet:focus-visible { outline: 2px solid var(--brand-700); outline-offset: -4px; border-radius: 18px; }
 /* 给看山让出车位：不加这句，长签名会一直排到铃铛底下、被看山盖掉尾巴。
    签名短（比如「你好」）时它完全看不出效果；签名长到默认那句（204px）在窄屏上
    会被省略号截断 —— 截断好过缺一截。 */
-.profile-topbar { margin-right: 90px; }
+.profile-topbar { margin-right: 114px; }
 /* 兜底：万一以后把看山放大到压住铃铛，让铃铛仍然画在上面。
    顶栏里的文字是静态定位，所以它们照样在 z-index:0 的贴图下面。 */
 .topbar-actions { position: relative; z-index: 1; }

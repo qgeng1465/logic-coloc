@@ -109,6 +109,8 @@ class DiscoverRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=50)
     # 前端生成的一次性任务标识，用于在用户取消时通知后端停止后续阶段。
     request_id: str | None = Field(default=None, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    # 云托管网关下使用后台任务 + 轮询，避免长时间占用单个 HTTP 请求。
+    async_mode: bool = False
 
     _validate_required_text = field_validator("text", "session_id")(_require_non_blank)
 

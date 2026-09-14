@@ -53,6 +53,8 @@ DISCOVER_TIMEOUT_SECONDS = int(__import__("os").environ.get("LC_DISCOVER_TIMEOUT
 REVIEW_SUMMARY_TIMEOUT_SECONDS = int(os.environ.get("LC_REVIEW_SUMMARY_TIMEOUT", "60"))
 _discover_cancel_events: dict[tuple[str, str], tuple[threading.Event, float]] = {}
 _discover_cancel_lock = threading.Lock()
+_discover_jobs: dict[tuple[str, str], dict] = {}
+_discover_jobs_lock = threading.Lock()
 _zhihu_rate_lock = threading.Lock()
 _zhihu_last_request_at = 0.0
 ZHIHU_MIN_REQUEST_INTERVAL = float(os.environ.get("LC_ZHIHU_REQUEST_INTERVAL", "1.5"))
@@ -456,8 +458,39 @@ def zhihu_library_similar(query: str, user: dict = Depends(current_user)) -> dic
     return {"code": 0, "items": [item for _, item in matches[:3]]}
 
 
-@router.post("/discover", response_model=DiscoverResponse)
+def _run_discover_job(request: DiscoverRequest, user_id: str, request_id: str) -> None:
+    """在后台线程运行长发现任务；HTTP 请求本身立即返回，规避云网关 504。"""
+    key = (user_id, request_id)
+    try:
+        cancel_event = _discover_event(user_id, request_id)
+        with _discover_jobs_lock:
+            _discover_jobs[key]["status"] = "running"
+        result = _service.discover(request, user_id=user_id, cancel_check=cancel_event.is_set)
+        with _discover_jobs_lock:
+            _discover_jobs[key].update(status="done", result=result)
+    except DiscoveryCancelled:
+        with _discover_jobs_lock:
+            _discover_jobs[key].update(status="cancelled", result=DiscoverResponse(code=499, message="分析已取消", concept=Concept(name=request.text), errors=["DISCOVERY_CANCELLED"]))
+    except Exception as exc:
+        logger.exception("Background discover job failed")
+        with _discover_jobs_lock:
+            _discover_jobs[key].update(status="done", result=_discover_failure(request))
+    finally:
+        with _discover_cancel_lock:
+            _discover_cancel_events.pop(key, None)
+
+
+@router.post("/discover", response_model=None)
 async def discover(request: DiscoverRequest, service: LogicColocService = Depends(get_service), user: dict = Depends(current_user)) -> DiscoverResponse:
+    if request.async_mode:
+        request_id = request.request_id or secrets.token_urlsafe(18)
+        key = (user["id"], request_id)
+        with _discover_jobs_lock:
+            existing = _discover_jobs.get(key)
+            if not existing or existing.get("status") in {"done", "cancelled"}:
+                _discover_jobs[key] = {"status": "queued", "result": None, "created": time.monotonic()}
+                threading.Thread(target=_run_discover_job, args=(request, user["id"], request_id), daemon=True).start()
+        return {"code": 0, "task_id": request_id, "status": "queued", "async": True}
     cancel_event = _discover_event(user["id"], request.request_id) if request.request_id else None
     try:
         return await asyncio.wait_for(
@@ -479,6 +512,20 @@ async def discover(request: DiscoverRequest, service: LogicColocService = Depend
         if request.request_id:
             with _discover_cancel_lock:
                 _discover_cancel_events.pop((user["id"], request.request_id), None)
+
+
+@router.get("/discover/{request_id}")
+def discover_status(request_id: str, user: dict = Depends(current_user)) -> dict:
+    key = (user["id"], request_id)
+    with _discover_jobs_lock:
+        job = _discover_jobs.get(key)
+        if not job:
+            raise HTTPException(status_code=404, detail="discover task not found")
+        result = job.get("result")
+        status = job.get("status", "queued")
+        if result is not None:
+            return {"code": result.code, "status": status, "done": True, "result": result.model_dump()}
+        return {"code": 0, "status": status, "done": False}
 
 
 @router.post("/discover/{request_id}/cancel")
