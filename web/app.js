@@ -998,7 +998,7 @@ function setDesktopPetFrame(action, index) {
   const config = DESKTOP_PET_ACTIONS[action];
   if (!config || !$("desktopPetSprite")) return;
   $("desktopPetSprite").src = desktopPetFramePath(action, index);
-  $("desktopPetSprite").alt = `黑松克桌宠：${config.label}`;
+  $("desktopPetSprite").alt = `看山：${config.label}`;
   $("desktopPetFrame").textContent = `${action} · ${String(index + 1).padStart(2, "0")}/${String(config.frames).padStart(2, "0")}`;
   $("desktopPetProgress").style.width = `${((index + 1) / config.frames) * 100}%`;
 }

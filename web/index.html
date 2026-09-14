@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="topbar-brand" href="/" aria-label="isoLogic 首页"><img src="/static/assets/images/logo.webp" alt="知源"><span>isoLogic</span></a>
     <button class="profile-topbar" id="editProfileButton" type="button" aria-label="编辑个人资料"><span class="avatar-wrap"><img id="profileAvatar" alt="用户头像"><span class="avatar-fallback" id="avatarFallback">山</span></span><span class="profile-topbar-copy"><strong id="profileNickname">学术萌新</strong><small id="profileSignature">记录每一次深度思考，留给未来的自己。</small></span></button>
-    <button class="topbar-pet" id="topbarPetButton" type="button" aria-label="打开我的桌宠"><img id="topbarPetSprite" src="/static/assets/pet/normal/normal_1.webp" alt=""></button>
+    <button class="topbar-pet" id="topbarPetButton" type="button" aria-label="打开看山"><img id="topbarPetSprite" src="/static/assets/pet/normal/normal_1.webp" alt="看山"></button>
     <span class="topbar-actions"><button class="notification-button" id="notificationButton" type="button" aria-label="查看待复习通知"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span class="notification-badge" id="notificationBadge" hidden>0</span></button><button class="settings-button" id="settingsButton" type="button" aria-label="设置" hidden>⚙</button></span>
   </header>
 
@@ -165,21 +165,21 @@
       <article class="level-card"><div><small id="levelLabel">LV.1 · 学术萌新</small><strong><span id="profilePoints">0</span> <em>能量</em></strong></div><button id="openRulesButton" type="button">规则与明细 →</button><div class="level-track"><i id="levelProgress"></i></div><p id="levelRemaining">距离下一级还差 100 能量</p><div class="kanshan-static" aria-label="刘看山静态形象">◉</div></article>
       <div class="record-heading"><h3>我的记录</h3></div>
       <div class="record-grid"><button type="button" data-record-filter="mastered"><div class="record-icon-box" style="background:#EBF2FA;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B7FA6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg></div><strong id="recordMastered">0</strong><span>已掌握卡片</span><small>已熟练掌握</small></button><button type="button" data-record-filter="unmastered"><div class="record-icon-box" style="background:#FDF4F0;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D98A76" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><strong id="recordUnmastered">0</strong><span>未掌握卡片</span><small>待复习巩固</small></button><article id="recordNoteReview"><div class="record-icon-box" style="background:#F0F6F4;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B9E8F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg></div><span>笔记复盘</span><small>回看复盘对话</small></article><button type="button" data-record-schedule><div class="record-icon-box" style="background:#F6F2F8;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9887A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div><span>学习日志</span><small>查看复习计划</small></button></div>
-      <article class="kanshan-guide-card desktop-pet-card" id="desktopPetCard" role="button" tabindex="0"><div class="record-icon-box pet-card-icon"><img src="/static/assets/pet/normal/normal_1.webp" alt=""></div><div><strong>我的桌宠</strong><p>陪你学习的黑松克，会挥手、思考和庆祝进步。</p><small>点击进入，和桌宠互动。</small></div><span class="kanshan-card-arrow">›</span></article>
+      <article class="kanshan-guide-card desktop-pet-card" id="desktopPetCard" role="button" tabindex="0"><div class="record-icon-box pet-card-icon"><img src="/static/assets/pet/normal/normal_1.webp" alt=""></div><div><strong>看山</strong><p>陪你学习的看山，会挥手、思考和庆祝进步。</p><small>点击进入，和看山互动。</small></div><span class="kanshan-card-arrow">›</span></article>
     </section>
     <section class="app-page desktop-pet-page" id="desktopPetPage" hidden aria-labelledby="desktopPetTitle">
       <button class="back-button pet-page-back" id="desktopPetBack" type="button">← 返回看山</button>
-      <div class="pet-page-heading"><div><h2 id="desktopPetTitle">我的桌宠</h2></div><span class="pet-energy-chip" id="desktopPetEnergy">0 能量</span></div>
+      <div class="pet-page-heading"><div><h2 id="desktopPetTitle">看山</h2></div><span class="pet-energy-chip" id="desktopPetEnergy">0 能量</span></div>
       <article class="pet-stage-card">
         <p class="pet-speech" id="desktopPetSpeech" aria-live="polite">今天也一起学点新东西吧！</p>
         <button class="pet-sprite-button" id="desktopPetSpriteButton" type="button" aria-label="摸摸桌宠，让它随机做一个动作">
-          <span class="pet-stage-glow"></span><img id="desktopPetSprite" src="/static/assets/pet/normal/normal_1.webp" alt="黑松克桌宠">
+          <span class="pet-stage-glow"></span><img id="desktopPetSprite" src="/static/assets/pet/normal/normal_1.webp" alt="看山">
         </button>
         <div class="pet-status-row"><span class="pet-status-dot"></span><strong id="desktopPetState">待机</strong><span id="desktopPetFrame">normal · 01/09</span></div>
         <div class="pet-progress" aria-hidden="true"><i id="desktopPetProgress"></i></div>
       </article>
       <section class="pet-actions-panel" aria-labelledby="petActionsTitle">
-        <div class="pet-actions-heading"><div><h3 id="petActionsTitle">和它互动</h3><p>点一下动作，看看黑松克的反应</p></div></div>
+        <div class="pet-actions-heading"><div><h3 id="petActionsTitle">和它互动</h3><p>点一下动作，看看山的反应</p></div></div>
         <div class="pet-action-grid">
           <button type="button" data-pet-action="wave"><span>👋</span><strong>打个招呼</strong><small>挥挥手</small></button>
           <button type="button" data-pet-action="idea"><span>💡</span><strong>灵感时刻</strong><small>冒出想法</small></button>
