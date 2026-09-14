@@ -980,6 +980,9 @@ let desktopPetPreloaded = false;
 function desktopPetFramePath(action, index) {
   return `/static/assets/pet/${action}/${action}_${index + 1}.webp`;
 }
+function topbarPetFramePath(action, index) {
+  return `/static/assets/pet/topbar/${action}/${action}_${index + 1}.webp`;
+}
 
 function preloadDesktopPetFrames() {
   if (desktopPetPreloaded) return;
@@ -1010,24 +1013,24 @@ function startTopbarGreetingLoop() {
   if (!sprite || !config) return;
   clearTopbarPetTimers();
   let index = 0;
-  sprite.src = desktopPetFramePath("wave", index);
+  sprite.src = topbarPetFramePath("wave", index);
   if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
   topbarPetTimer = window.setInterval(() => {
     index += 1;
     if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
-    sprite.src = desktopPetFramePath("wave", index);
+    sprite.src = topbarPetFramePath("wave", index);
   }, 182);
 }
 function playTopbarPetAction(action) {
   const config = DESKTOP_PET_ACTIONS[action], sprite = $("topbarPetSprite");
   if (!config || !sprite) return;
   clearTopbarPetTimers();
-  let index = 0; sprite.src = desktopPetFramePath(action, index);
+  let index = 0; sprite.src = topbarPetFramePath(action, index);
   if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
   topbarPetTimer = window.setInterval(() => {
     index += 1;
     if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
-    sprite.src = desktopPetFramePath(action, index);
+    sprite.src = topbarPetFramePath(action, index);
   }, 182);
 }
 
