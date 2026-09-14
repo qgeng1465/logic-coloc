@@ -958,6 +958,82 @@ function toggleZhihuSelectAll() {
   $("toggleZhihuSelectAll").textContent = shouldSelect ? "取消全选" : "全选";
 }
 
+const DESKTOP_PET_ACTIONS = Object.freeze({
+  normal: { label: "待机", frames: 9, speech: "休息一下，整理好思路再出发。" },
+  wave: { label: "挥手打招呼", frames: 12, speech: "嗨！今天也一起学点新东西吧！" },
+  idea: { label: "灵感时刻", frames: 12, speech: "叮！这个想法值得记进笔记。" },
+  followup: { label: "深入追问", frames: 16, speech: "让我戴好眼镜，我们再往深处想一层。" },
+  crosslink: { label: "发现同源", frames: 16, speech: "找到一条跨学科连接，原来它们共享同一种逻辑！" },
+  levelup: { label: "庆祝进步", frames: 16, speech: "撒花！每一点积累都在让你变得更厉害。" },
+});
+const DESKTOP_PET_RANDOM_ACTIONS = ["wave", "idea", "followup", "crosslink"];
+const desktopPetReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let desktopPetTimer = null;
+let desktopPetPreloaded = false;
+
+function desktopPetFramePath(action, index) {
+  return `/static/assets/pet/${action}/${action}_${index + 1}.webp`;
+}
+
+function preloadDesktopPetFrames() {
+  if (desktopPetPreloaded) return;
+  desktopPetPreloaded = true;
+  Object.entries(DESKTOP_PET_ACTIONS).forEach(([action, config]) => {
+    for (let index = 0; index < config.frames; index += 1) {
+      const image = new Image(); image.src = desktopPetFramePath(action, index);
+    }
+  });
+}
+
+function setDesktopPetFrame(action, index) {
+  const config = DESKTOP_PET_ACTIONS[action];
+  if (!config || !$("desktopPetSprite")) return;
+  $("desktopPetSprite").src = desktopPetFramePath(action, index);
+  $("desktopPetSprite").alt = `黑松克桌宠：${config.label}`;
+  $("desktopPetFrame").textContent = `${action} · ${String(index + 1).padStart(2, "0")}/${String(config.frames).padStart(2, "0")}`;
+  $("desktopPetProgress").style.width = `${((index + 1) / config.frames) * 100}%`;
+}
+
+function restDesktopPet(keepSpeech = true) {
+  if (desktopPetTimer) { window.clearInterval(desktopPetTimer); desktopPetTimer = null; }
+  document.querySelectorAll("[data-pet-action]").forEach((button) => button.classList.remove("is-playing"));
+  if (!$("desktopPetState")) return;
+  $("desktopPetState").textContent = DESKTOP_PET_ACTIONS.normal.label;
+  if (!keepSpeech) $("desktopPetSpeech").textContent = "今天也一起学点新东西吧！";
+  setDesktopPetFrame("normal", 0);
+}
+
+function playDesktopPetAction(action) {
+  const config = DESKTOP_PET_ACTIONS[action];
+  if (!config || !$("desktopPetSprite")) return;
+  if (desktopPetTimer) window.clearInterval(desktopPetTimer);
+  document.querySelectorAll("[data-pet-action]").forEach((button) => button.classList.toggle("is-playing", button.dataset.petAction === action));
+  $("desktopPetState").textContent = config.label;
+  $("desktopPetSpeech").textContent = config.speech;
+  if (desktopPetReduceMotion) { setDesktopPetFrame(action, config.frames - 1); desktopPetTimer = window.setTimeout(() => restDesktopPet(true), 700); return; }
+  let index = 0;
+  setDesktopPetFrame(action, index);
+  desktopPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { restDesktopPet(true); return; }
+    setDesktopPetFrame(action, index);
+  }, 182);
+}
+
+function openDesktopPet() {
+  preloadDesktopPetFrames();
+  const points = getPoints(), level = getLevelInfo(points);
+  $("desktopPetEnergy").textContent = `${level.level} · ${points} 能量`;
+  activateAppPage("desktopPetPage");
+  playDesktopPetAction("wave");
+}
+
+function closeDesktopPet() {
+  restDesktopPet(false);
+  renderProfile();
+  activateAppPage("petPage");
+}
+
 function activatePanel(panelId) {
   showKnowledgeLauncher(panelId);
 }
@@ -968,7 +1044,8 @@ function activateAppPage(pageId) {
   document.querySelectorAll(".app-page").forEach((item) => { item.hidden = item.id !== pageId; });
   const tabs = document.querySelectorAll(".bottom-tab");
   tabs.forEach((item) => { item.classList.remove("active"); item.setAttribute("aria-selected", "false"); });
-  const activeTab = document.querySelector(`.bottom-tab[data-app-page="${pageId}"]`);
+  const tabPageId = pageId === "desktopPetPage" ? "petPage" : pageId;
+  const activeTab = document.querySelector(`.bottom-tab[data-app-page="${tabPageId}"]`);
   if (activeTab) { activeTab.classList.add("active"); activeTab.setAttribute("aria-selected", "true"); }
   const settingsButton = $("settingsButton");
   if (settingsButton) settingsButton.hidden = pageId !== "petPage";
@@ -1735,8 +1812,11 @@ $("settingsSheetClose").addEventListener("click", closeSettingsSheet);
 $("accountSettingsButton").addEventListener("click", () => { closeSettingsSheet(); openProfileSheet(); });
 $("aboutKnowledgeButton").addEventListener("click", openAboutSheet);
 $("toggleZhihuSelectAll")?.addEventListener("click", toggleZhihuSelectAll);
-$("zhihuLibraryCard")?.addEventListener("click", openZhihuLibrary);
-$("zhihuLibraryCard")?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openZhihuLibrary(); } });
+$("desktopPetCard")?.addEventListener("click", openDesktopPet);
+$("desktopPetCard")?.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDesktopPet(); } });
+$("desktopPetBack")?.addEventListener("click", closeDesktopPet);
+$("desktopPetSpriteButton")?.addEventListener("click", () => playDesktopPetAction(DESKTOP_PET_RANDOM_ACTIONS[Math.floor(Math.random() * DESKTOP_PET_RANDOM_ACTIONS.length)]));
+document.querySelectorAll("[data-pet-action]").forEach((button) => button.addEventListener("click", () => playDesktopPetAction(button.dataset.petAction)));
 $("zhihuConsentClose")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentCancel")?.addEventListener("click", closeZhihuConsent);
 $("zhihuConsentConfirm")?.addEventListener("click", confirmZhihuConsent);
