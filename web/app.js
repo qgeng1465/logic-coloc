@@ -999,12 +999,36 @@ function setDesktopPetFrame(action, index) {
   $("desktopPetFrame").textContent = `${action} · ${String(index + 1).padStart(2, "0")}/${String(config.frames).padStart(2, "0")}`;
   $("desktopPetProgress").style.width = `${((index + 1) / config.frames) * 100}%`;
 }
+let topbarPetTimer = null;
+let topbarPetPauseTimer = null;
+function clearTopbarPetTimers() {
+  if (topbarPetTimer) { window.clearInterval(topbarPetTimer); topbarPetTimer = null; }
+  if (topbarPetPauseTimer) { window.clearTimeout(topbarPetPauseTimer); topbarPetPauseTimer = null; }
+}
+function startTopbarGreetingLoop() {
+  const sprite = $("topbarPetSprite"), config = DESKTOP_PET_ACTIONS.wave;
+  if (!sprite || !config) return;
+  clearTopbarPetTimers();
+  let index = 0;
+  sprite.src = desktopPetFramePath("wave", index);
+  if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
+  topbarPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, 3000); return; }
+    sprite.src = desktopPetFramePath("wave", index);
+  }, 182);
+}
 function playTopbarPetAction(action) {
   const config = DESKTOP_PET_ACTIONS[action], sprite = $("topbarPetSprite");
   if (!config || !sprite) return;
-  if (desktopPetTimer) window.clearInterval(desktopPetTimer);
+  clearTopbarPetTimers();
   let index = 0; sprite.src = desktopPetFramePath(action, index);
-  desktopPetTimer = window.setInterval(() => { index += 1; if (index >= config.frames) { window.clearInterval(desktopPetTimer); desktopPetTimer = null; sprite.src = desktopPetFramePath("normal", 0); return; } sprite.src = desktopPetFramePath(action, index); }, 182);
+  if (desktopPetReduceMotion) { topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
+  topbarPetTimer = window.setInterval(() => {
+    index += 1;
+    if (index >= config.frames) { clearTopbarPetTimers(); topbarPetPauseTimer = window.setTimeout(startTopbarGreetingLoop, action === "wave" ? 3000 : 700); return; }
+    sprite.src = desktopPetFramePath(action, index);
+  }, 182);
 }
 
 function restDesktopPet(keepSpeech = true) {
@@ -2171,6 +2195,7 @@ $("chatText").addEventListener("keydown", (event) => { if (event.key === "Enter"
 
 syncHistoryBack();
 initAuth();
+startTopbarGreetingLoop();
 
 
 

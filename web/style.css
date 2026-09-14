@@ -1712,7 +1712,7 @@ textarea:focus, input:focus, .rich-editor:focus {
   right: 66px;
   top: 2px;
   bottom: 2px;
-  width: 112px;
+  width: 130px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1723,12 +1723,12 @@ textarea:focus, input:focus, .rich-editor:focus {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.topbar-pet img { width: 112px; height: 112px; object-fit: contain; object-position: center; user-select: none; -webkit-user-drag: none; transform: translateY(1px); }
+.topbar-pet img { width: 130px; height: 150px; object-fit: contain; object-position: center; user-select: none; -webkit-user-drag: none; transform: translateY(1px); }
 .topbar-pet:focus-visible { outline: 2px solid var(--brand-700); outline-offset: -4px; border-radius: 18px; }
 /* 给看山让出车位：不加这句，长签名会一直排到铃铛底下、被看山盖掉尾巴。
    签名短（比如「你好」）时它完全看不出效果；签名长到默认那句（204px）在窄屏上
    会被省略号截断 —— 截断好过缺一截。 */
-.profile-topbar { margin-right: 114px; }
+.profile-topbar { margin-right: 132px; }
 /* 兜底：万一以后把看山放大到压住铃铛，让铃铛仍然画在上面。
    顶栏里的文字是静态定位，所以它们照样在 z-index:0 的贴图下面。 */
 .topbar-actions { position: relative; z-index: 1; }
