@@ -55,6 +55,8 @@ _discover_cancel_events: dict[tuple[str, str], tuple[threading.Event, float]] = 
 _discover_cancel_lock = threading.Lock()
 _discover_jobs: dict[tuple[str, str], dict] = {}
 _discover_jobs_lock = threading.Lock()
+# 后台任务结果给前端留 15 分钟可查；过期即清，防结果字典无限增长。
+DISCOVER_JOB_TTL_SECONDS = int(os.environ.get("LC_DISCOVER_JOB_TTL", "900"))
 _zhihu_rate_lock = threading.Lock()
 _zhihu_last_request_at = 0.0
 ZHIHU_MIN_REQUEST_INTERVAL = float(os.environ.get("LC_ZHIHU_REQUEST_INTERVAL", "1.5"))
@@ -458,6 +460,19 @@ def zhihu_library_similar(query: str, user: dict = Depends(current_user)) -> dic
     return {"code": 0, "items": [item for _, item in matches[:3]]}
 
 
+def _prune_discover_jobs_locked() -> None:
+    """_discover_jobs 只增不减：每条结果挂着完整的 DiscoverResponse，实例常驻时会一直攒。
+    按 TTL 顺手清理；queued/running 的任务不能删（轮询方还在等它）。"""
+    now = time.monotonic()
+    stale = [
+        key for key, job in _discover_jobs.items()
+        if now - job.get("created", now) > DISCOVER_JOB_TTL_SECONDS
+        and job.get("status") not in {"queued", "running"}
+    ]
+    for key in stale:
+        _discover_jobs.pop(key, None)
+
+
 def _run_discover_job(request: DiscoverRequest, user_id: str, request_id: str) -> None:
     """在后台线程运行长发现任务；HTTP 请求本身立即返回，规避云网关 504。"""
     key = (user_id, request_id)
@@ -486,6 +501,7 @@ async def discover(request: DiscoverRequest, service: LogicColocService = Depend
         request_id = request.request_id or secrets.token_urlsafe(18)
         key = (user["id"], request_id)
         with _discover_jobs_lock:
+            _prune_discover_jobs_locked()
             existing = _discover_jobs.get(key)
             if not existing or existing.get("status") in {"done", "cancelled"}:
                 _discover_jobs[key] = {"status": "queued", "result": None, "created": time.monotonic()}
@@ -518,6 +534,7 @@ async def discover(request: DiscoverRequest, service: LogicColocService = Depend
 def discover_status(request_id: str, user: dict = Depends(current_user)) -> dict:
     key = (user["id"], request_id)
     with _discover_jobs_lock:
+        _prune_discover_jobs_locked()
         job = _discover_jobs.get(key)
         if not job:
             raise HTTPException(status_code=404, detail="discover task not found")

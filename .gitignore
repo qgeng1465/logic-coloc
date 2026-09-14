@@ -31,3 +31,9 @@ data/.secret_key
 # 站点图标一起忽略掉，那目录是要进镜像的。
 /data/demo_cache.json
 /assets/
+
+# 演示录屏的中间产物：原始 webm 走 Release 分发，切片目录和路径指针是本机状态。
+# 成片 demo/logic_coloc_demo.mp4 要进库，所以别图省事忽略整个 demo/。
+/demo/segs/
+/demo/raw.video.path
+/demo/*.webm

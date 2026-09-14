@@ -1,0 +1,152 @@
+[
+ {
+  "name": "v0_start",
+  "t": 1789382191.152,
+  "accel": false
+ },
+ {
+  "name": "s0_load",
+  "t": 1789382191.154,
+  "accel": false
+ },
+ {
+  "name": "s1_tab",
+  "t": 1789382200.437,
+  "accel": false
+ },
+ {
+  "name": "s1_type",
+  "t": 1789382202.611,
+  "accel": false
+ },
+ {
+  "name": "s1_wait",
+  "t": 1789382205.188,
+  "accel": true
+ },
+ {
+  "name": "s1_show",
+  "t": 1789382217.785,
+  "accel": false
+ },
+ {
+  "name": "s1_save",
+  "t": 1789382228.172,
+  "accel": false
+ },
+ {
+  "name": "s1_saved",
+  "t": 1789382233.68,
+  "accel": false
+ },
+ {
+  "name": "s2_tab",
+  "t": 1789382242.944,
+  "accel": false
+ },
+ {
+  "name": "s2_type",
+  "t": 1789382245.024,
+  "accel": false
+ },
+ {
+  "name": "s2_wait",
+  "t": 1789382247.471,
+  "accel": true
+ },
+ {
+  "name": "s2_show",
+  "t": 1789382384.407,
+  "accel": false
+ },
+ {
+  "name": "s2_mapping",
+  "t": 1789382394.582,
+  "accel": false
+ },
+ {
+  "name": "s2_back",
+  "t": 1789382398.674,
+  "accel": false
+ },
+ {
+  "name": "s3_open",
+  "t": 1789382408.695,
+  "accel": false
+ },
+ {
+  "name": "s3_type",
+  "t": 1789382409.684,
+  "accel": false
+ },
+ {
+  "name": "s3_wait",
+  "t": 1789382410.459,
+  "accel": true
+ },
+ {
+  "name": "s3_show",
+  "t": 1789382411.006,
+  "accel": false
+ },
+ {
+  "name": "s4_nav",
+  "t": 1789382416.306,
+  "accel": false
+ },
+ {
+  "name": "s4_wave",
+  "t": 1789382422.151,
+  "accel": false
+ },
+ {
+  "name": "s4_idea",
+  "t": 1789382424.924,
+  "accel": false
+ },
+ {
+  "name": "s4_followup",
+  "t": 1789382427.608,
+  "accel": false
+ },
+ {
+  "name": "s4_crosslink",
+  "t": 1789382430.291,
+  "accel": false
+ },
+ {
+  "name": "s4_levelup",
+  "t": 1789382432.976,
+  "accel": false
+ },
+ {
+  "name": "s4_normal",
+  "t": 1789382435.656,
+  "accel": false
+ },
+ {
+  "name": "s4_touch",
+  "t": 1789382438.342,
+  "accel": false
+ },
+ {
+  "name": "s5_nav",
+  "t": 1789382442.308,
+  "accel": false
+ },
+ {
+  "name": "s5_done",
+  "t": 1789382450.188,
+  "accel": false
+ },
+ {
+  "name": "s6_home",
+  "t": 1789382452.394,
+  "accel": false
+ },
+ {
+  "name": "v1_end",
+  "t": 1789382454.877,
+  "accel": false
+ }
+]

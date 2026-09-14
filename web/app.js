@@ -574,7 +574,12 @@ async function explain() {
   setLoading(true, "正在提取逻辑结构并请求模型…", $("explainButton"));
   try {
     const data = await request("/api/explain", { text });
-    addPoints(10, "读懂新概念"); playTopbarPetAction("idea");
+    // 「LLM 调用失败 / 无法完成特征提取」会以 code!=0 或正常响应体里的失败文案出现；
+    // 失败时不能发奖励 —— 否则网关一断，连点连赚 +10。判定要和下面的报错提示用同一个。
+    const backendFailed = data.code !== 0
+      || (data.explanation || "").includes("LLM 调用失败")
+      || (data.explanation || "").includes("无法完成特征提取");
+    if (!backendFailed) { addPoints(10, "读懂新概念"); playTopbarPetAction("idea"); }
     setDraftForPanel("explainPanel", text);
     state.explainSessionId = data.session_id;
     addHistory("读懂它", text, state.explainSessionId, data);
@@ -586,7 +591,7 @@ async function explain() {
     $("explainResult").hidden = false;
     $("historyBackButton").hidden = false; $("historyMemory").classList.add("has-result-back");
     $("followUp").hidden = false;
-    if ((data.explanation || "").includes("LLM 调用失败") || (data.explanation || "").includes("无法完成特征提取")) {
+    if (backendFailed) {
       showError("explainError", "解释服务当前无法连接模型后端，请确认 LLM 网关已经启动。");
     }
   } catch (error) { console.error("Explain request failed", error); showError("explainError", error.message); }
@@ -879,6 +884,10 @@ function renderCandidates(data) {
     container.append(card);
   });
   $("discoverEmpty").hidden = records.length > 0;
+  // 「找到了同源」= 至少有一条被判为可靠。调用方据此决定要不要发奖励和放桌宠动画：
+  // 检索闸门会合法地返回 0 候选（面板随即显示「当前证据不足，不强行建立类比」），
+  // 那种情况下还发「发现跨学科同源」的分数和庆祝动画，等于奖励一次没有结论的查询。
+  return records.some((record) => effectiveVerdict(record, reportFor(record), homologyFor(record)) === "RELIABLE_WITH_LIMITS");
 }
 
 async function discover() {
@@ -910,16 +919,18 @@ async function discover() {
       return;
     }
     state.discoverSessionId = data.session_id;
-    addPoints(15, "发现跨学科同源");
-    playTopbarPetAction("crosslink");
     setDraftForPanel("discoverPanel", text);
     addHistory("跨学科理解", text, state.discoverSessionId, data);
     clearDraftForPanel("discoverPanel");
     $("discoverTitle").textContent = `发现同源 · ${data.concept?.name || text.slice(0, 30)}`;
     renderRichText($("discoverReport"), data.report || "同源分析已完成。");
-    renderCandidates(data); $("discoverResult").hidden = false; $("historyBackButton").hidden = false; $("historyMemory").classList.add("has-result-back");
+    const foundReliable = renderCandidates(data);
+    $("discoverResult").hidden = false; $("historyBackButton").hidden = false; $("historyMemory").classList.add("has-result-back");
     if ((data.report || "").includes("LLM 调用失败") || (data.report || "").includes("无法完成特征提取")) {
       showError("discoverError", "同源分析当前无法连接模型后端，请确认 LLM 网关已经启动。");
+    } else if (foundReliable) {
+      addPoints(15, "发现跨学科同源");
+      playTopbarPetAction("crosslink");
     }
   } catch (error) { if (error.name !== "AbortError") { console.error("Discover request failed", error); showError("discoverError", error.message); } }
   finally { if (state.discoverRequestId === requestId) { state.discoverAbortController = null; state.discoverRequestId = null; setLoading(false, "", $("discoverButton")); } }
@@ -1561,7 +1572,6 @@ function previewAttachment(file) { $("attachmentPreviewTitle").textContent = fil
 function openProfileSheet() { const user = getUser(); pendingAvatarFile = null; pendingAvatarUrl = user.avatarUrl || ""; $("profileNicknameInput").value = user.nickname; $("profileSignatureInput").value = user.signature; $("profileAvatarPreview").src = pendingAvatarUrl; $("profileAvatarPreview").closest(".avatar-picker").classList.toggle("has-preview", Boolean(pendingAvatarUrl)); $("sheetBackdrop").hidden = false; $("profileSheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeProfileSheet() { $("profileSheet").hidden = true; $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); }
 function openSettingsSheet() { $("sheetBackdrop").hidden = false; $("settingsSheet").hidden = false; document.body.classList.add("sheet-open"); }
-function openZhihuLibrary() { $("sheetBackdrop").hidden = false; $("zhihuConsentSheet").hidden = false; document.body.classList.add("sheet-open"); }
 function closeZhihuConsent() { $("zhihuConsentSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
 function confirmZhihuConsent() { closeZhihuConsent(); request("/api/zhihu/oauth/authorize", null, { method: "GET" }).then((data) => { if (data.url) window.open(data.url, "_blank", "noopener"); }).catch((error) => showToast(error.message || "知乎 OAuth 尚未配置，请联系管理员")); }
 function closeSettingsSheet() { $("settingsSheet").hidden = true; if (!document.querySelector(".bottom-sheet:not([hidden])")) { $("sheetBackdrop").hidden = true; document.body.classList.remove("sheet-open"); } }
